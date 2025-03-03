@@ -11,7 +11,7 @@ from plyfile import PlyData
 from tqdm import tqdm
 
 # sample
-from scipy.spatial import cKDTree
+from scipy.spatial.ckdtree import cKDTree
 
 # fps and knn
 from utils.pointnet_util import sample_and_group
@@ -26,16 +26,16 @@ parser.add_argument('--pretrain', action="store_true", help="If true, cut the pa
 parser.add_argument('--group_mul', type=int, default=10, help="Number of patches = (group_mul * points) / point_num")
 parser.add_argument('--sample_num', type=int, default=20, help="Random sample nosie points for pretraining")   
 classes = [
-            "bagel",
-            "cable_gland",
-            "carrot",
+            # "bagel",
+            # "cable_gland",
+            # "carrot",
             "cookie",
-            "dowel",
-            "foam",
-            "peach",
-            "potato",
-            "rope",
-            "tire",
+            # "dowel",
+            # "foam",
+            # "peach",
+            # "potato",
+            # "rope",
+            # "tire",
             ]
 
 a = parser.parse_args()

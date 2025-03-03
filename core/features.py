@@ -115,7 +115,7 @@ class Features(torch.nn.Module):
             rgb_patch_28 = rgb_patch_28.cpu()
             shape_guide_rgb_features_28 = shape_guide_rgb_features_28.cpu()
             for patch in range(knn_idx.shape[0]):
-                knn_features =  shape_guide_rgb_features_28[knn_idx[patch]]
+                knn_features =  shape_guide_rgb_features_28[knn_idx[patch].cpu()]
                 code_matrix = sparse_encode(X=rgb_patch_28[patch].view(1,-1), dictionary=knn_features, algorithm='omp', n_nonzero_coefs=3, alpha=1e-10)
                 code_matrix = torch.Tensor(code_matrix)
                 sparse_features = torch.matmul(code_matrix, knn_features) # Sparse representation test rgb feature using the training rgb features stored in the memory.

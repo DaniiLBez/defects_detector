@@ -10,7 +10,7 @@ import torch.nn.functional as F
 from PIL import ImageFilter
 # configuration
 from six.moves import cPickle
-from scipy.spatial import cKDTree
+from scipy.spatial.ckdtree import cKDTree
 
 # utils for configuration
 def create_dir(dir_path):

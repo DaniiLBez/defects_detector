@@ -1,10 +1,15 @@
 import os
+import sys
 import numpy as np
 import tifffile as tiff
 import open3d as o3d
 from pathlib import Path
 from PIL import Image
 import math
+
+project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.append(project_root)
+
 import utils.mvtec3d_util as mvt_util
 import argparse
 
@@ -120,7 +125,7 @@ def preprocess_pc(tiff_path):
 
     organized_clustered_pc, organized_clustered_rgb = connected_components_cleaning(padded_planeless_organized_pc, padded_planeless_organized_rgb, tiff_path)
     # SAVE PREPROCESSED FILES
-    tiff.imsave(tiff_path, organized_clustered_pc)
+    tiff.imwrite(tiff_path, organized_clustered_pc)
     Image.fromarray(organized_clustered_rgb).save(rgb_path)
     if gt_exists:
         Image.fromarray(padded_organized_gt).save(gt_path)
@@ -130,7 +135,7 @@ def preprocess_pc(tiff_path):
 if __name__ == '__main__':
     
     parser = argparse.ArgumentParser(description='Preprocess MVTec 3D-AD')
-    parser.add_argument('dataset_path', type=str,required=True , help='The root path of the MVTec 3D-AD. The preprocessing is done inplace (i.e. the preprocessed dataset overrides the existing one)')
+    parser.add_argument('--dataset_path', type=str,required=True , help='The root path of the MVTec 3D-AD. The preprocessing is done inplace (i.e. the preprocessed dataset overrides the existing one)')
     args = parser.parse_args()
     
     root_path = args.dataset_path

@@ -52,7 +52,7 @@ time = datetime.datetime.now().strftime("%Y-%m-%d-%H-%M-%S")
 conf.ckpt_path = os.path.join(a.ckpt_path, time) + CKPT_FILENAME
 if not osp.exists(conf.ckpt_path):
     os.makedirs(conf.ckpt_path)
-conf.save(os.path.join(conf.ckpt_path, "Congiguration"))
+conf.save(os.path.join(conf.ckpt_path, "Configuration"))
 
 class Pretraining():
     def __init__(self, conf):

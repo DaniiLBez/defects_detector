@@ -1,6 +1,6 @@
 numpy
 kornia
-open3d==0.9
+open3d
 pandas
 Pillow
 ptflops
@@ -8,7 +8,6 @@ plyfile
 scikit-learn
 scikit-image
 scipy
-sklearn
 tabulate
 tifffile
 timm
