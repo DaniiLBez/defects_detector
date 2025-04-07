@@ -65,7 +65,7 @@ class MVTec3DLoader(BaseDataLoader):
         """
         file_info_list = []
 
-        if split == 'test':
+        if split not in ['test', 'train', 'validation', 'pretrain']:
             return [
                 {
                     "file_path": file_path,
@@ -76,52 +76,48 @@ class MVTec3DLoader(BaseDataLoader):
                 for file_path in glob.glob(os.path.join(input_dir, "xyz", "*.tiff"))
             ]
 
-        else:
-            # For MVTec3D-AD dataset structure
-            class_dirs = [d for d in os.listdir(input_dir) if os.path.isdir(os.path.join(input_dir, d))]
+        # For MVTec3D-AD dataset structure
+        class_dirs = [d for d in os.listdir(input_dir) if os.path.isdir(os.path.join(input_dir, d))]
 
-            for class_name in class_dirs:
-                if split == 'train':
-                    # Only good samples in train
-                    dir_path = glob.glob(os.path.join(input_dir, class_name, "train", "good", "xyz", "*.tiff"))
-                    defect_type = "good"
-                elif split == 'pretrain':
-                    # Random subset for pretraining
-                    import random
-                    dir_path = glob.glob(os.path.join(input_dir, class_name, "train", "good", "xyz", "*.tiff"))
-                    dir_path = random.sample(dir_path, min(20, len(dir_path)))  # Take up to 20 samples
-                    defect_type = "good"
-                else:
-                    # All types in test/validation
-                    dir_path = []
-                    defect_types_path = os.path.join(input_dir, class_name, split)
-                    if os.path.exists(defect_types_path):
-                        defect_types = os.listdir(defect_types_path)
-                        for defect_type in defect_types:
-                            tiff_path = glob.glob(
-                                os.path.join(input_dir, class_name, split, defect_type, "xyz", "*.tiff"))
-                            for path in tiff_path:
-                                file_info = {
-                                    "file_path": path,
-                                    "class_name": class_name,
-                                    "defect_type": defect_type,
-                                    "object_id": os.path.splitext(os.path.basename(path))[0],
-                                    "split": split
-                                }
-                                file_info_list.append(file_info)
-                    continue  # Skip the loop below since we already added file_info entries
+        for class_name in class_dirs:
+            if split == 'train':
+                # Only good samples in train
+                dir_path = glob.glob(os.path.join(input_dir, class_name, "train", "good", "xyz", "*.tiff"))
+                defect_type = "good"
+            elif split == 'pretrain':
+                # Random subset for pretraining
+                import random
+                dir_path = glob.glob(os.path.join(input_dir, class_name, "train", "good", "xyz", "*.tiff"))
+                dir_path = random.sample(dir_path, min(20, len(dir_path)))  # Take up to 20 samples
+                defect_type = "good"
+            else:
+                # All types in test/validation
+                defect_types_path = os.path.join(input_dir, class_name, split)
+                if os.path.exists(defect_types_path):
+                    for defect_type in os.listdir(defect_types_path):
+                        tiff_path = glob.glob(os.path.join(input_dir, class_name, split, defect_type, "xyz", "*.tiff"))
+                        for path in tiff_path:
+                            file_info = {
+                                "file_path": path,
+                                "class_name": class_name,
+                                "defect_type": defect_type,
+                                "object_id": os.path.splitext(os.path.basename(path))[0],
+                                "split": split
+                            }
+                            file_info_list.append(file_info)
+                continue  # Skip the loop below since we already added file_info entries
 
-                print(f"Found {len(dir_path)} files for {class_name} ({split})")
+            print(f"Found {len(dir_path)} files for {class_name} ({split})")
 
-                for path in dir_path:
-                    file_info = {
-                        "file_path": path,
-                        "class_name": class_name,
-                        "defect_type": defect_type,
-                        "object_id": os.path.splitext(os.path.basename(path))[0],
-                        "split": split
-                    }
-                    file_info_list.append(file_info)
+            for path in dir_path:
+                file_info = {
+                    "file_path": path,
+                    "class_name": class_name,
+                    "defect_type": defect_type,
+                    "object_id": os.path.splitext(os.path.basename(path))[0],
+                    "split": split
+                }
+                file_info_list.append(file_info)
 
         return file_info_list
 
@@ -138,8 +134,8 @@ class MVTec3DLoader(BaseDataLoader):
         """
         if file_info["split"] == 'pretrain':
             save_dir = os.path.join(base_save_path, 'PRETRAIN_DATA', file_info["class_name"])
-        elif file_info["split"] == 'test' and file_info.get("defect_type") is None:
-            save_dir = os.path.join(base_save_path, file_info["class_name"], "npz")
+        elif file_info["split"] == 'custom' and file_info.get("defect_type") is None:
+            save_dir = os.path.join(base_save_path, "npz")
         else:
             save_dir = os.path.join(base_save_path, file_info["class_name"],
                                     file_info["split"], file_info["defect_type"], "npz")
