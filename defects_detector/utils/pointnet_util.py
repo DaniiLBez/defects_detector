@@ -45,6 +45,7 @@ def index_points(points, idx):
     res = torch.gather(points, 1, idx[..., None].expand(-1, -1, points.size(-1)))
     return res.reshape(*raw_size, -1)
 
+
 def farthest_point_sample(xyz, npoint):
     """
     Input:

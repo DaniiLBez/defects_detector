@@ -11,7 +11,7 @@ from plyfile import PlyData
 from tqdm import tqdm
 
 # sample
-from scipy.spatial.ckdtree import cKDTree
+from scipy.spatial import cKDTree
 
 # fps and knn
 from utils.pointnet_util import sample_and_group
@@ -273,8 +273,6 @@ def split_patch(split, input_file, save_path):
     grouped_xyz = np.squeeze(grouped_xyz.cpu().data.numpy())
 
     org_idx_all = np.squeeze(org_idx_all)
-    re_org_idx_all = org_idx_all.reshape(org_idx_all.shape[0] * org_idx_all.shape[1])
-    no_dup_idx_all = np.unique(re_org_idx_all, axis=0)
 
     #print("Test whether the point cloud is covered")
     #print("group_size:", GROUP_SIZE, "num_group:", num_group)
