@@ -1,2 +1,6 @@
 **/__pycache__
-/output
+output
+venv
+img
+.idea
+data
