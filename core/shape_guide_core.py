@@ -69,7 +69,7 @@ class Configuration(object):
     def load(file_name):
         return next(unpickle_data(file_name + ".pickle"))
 
-class ShapeGuide():
+class ShapeGuide:
     def __init__(self, conf, class_name, pro_limit):
         self.image_size = conf.image_size
         self.class_name = class_name

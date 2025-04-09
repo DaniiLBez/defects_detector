@@ -17,7 +17,7 @@ class PatchCutterService:
         self.save_path = save_path
         os.makedirs(save_path, exist_ok=True)
 
-    def process_file(self, input_file: str, save_path: str, split: str) -> str:
+    def process_file(self, input_file: str) -> Dict[str, Any]:
         """Process a single file and save patches"""
         # Load and preprocess data
         data = self.data_loader.load_data(input_file)
@@ -29,12 +29,7 @@ class PatchCutterService:
         points = self.data_loader.normalize(points)
 
         # Cut patches
-        patches = self.patch_cutter.cut_patches(points, indices)
-
-        # Save patches
-        self.save_patches(patches, save_path, split)
-
-        return save_path
+        return self.patch_cutter.cut_patches(points, indices)
 
     def process_directory(self, input_dir: str, split: str) -> List[str]:
         """Process all files in directory by class"""
@@ -48,8 +43,9 @@ class PatchCutterService:
             save_path = self.data_loader.get_save_path(file_info, self.save_path)
 
             # Process file
-            processed_file = self.process_file(file_info["file_path"], save_path, split)
-            processed_files.append(processed_file)
+            patches = self.process_file(file_info["file_path"])
+            self.save_patches(patches, save_path, split)
+            processed_files.append(save_path)
 
         return processed_files
 
