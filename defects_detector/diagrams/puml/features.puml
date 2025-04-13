@@ -1,0 +1,100 @@
+@startuml
+
+class RGBModel {
+    -_device: Device
+    -backbone: timm.models
+    -avg_pool: torch.nn.AdaptiveAvgPool2d
+    +device: Device
+
+    +__init__(device: Device, backbone_name: str, out_indices: tuple, checkpoint_path: str, pool_last: bool)
+    +forward(x: torch.Tensor): list
+    +freeze_parameters(layers: list, freeze_bn: bool): void
+}
+
+enum Device {
+    CPU = "cpu"
+    CUDA = "cuda"
+}
+
+class PointEncoder {
+    +conv1: nn.Conv1d
+    +conv2: nn.Conv1d
+    +conv3: nn.Conv1d
+    +fc1: nn.Linear
+    +fc2: nn.Linear
+    +bn1: nn.BatchNorm1d
+    +bn2: nn.BatchNorm1d
+    +bn3: nn.BatchNorm1d
+    +bn4: nn.BatchNorm1d
+    +bn5: nn.BatchNorm1d
+
+    +__init__(in_channels: int, feature_dim: int)
+    +forward(x: torch.Tensor): torch.Tensor
+}
+
+class NeuralImplicitField {
+    +fc1: nn.Linear
+    +fc2: nn.Linear
+    +fc3: nn.Linear
+    +fc_out: nn.Linear
+
+    +__init__(feature_dim: int)
+    +forward(features: torch.Tensor, points: torch.Tensor): torch.Tensor
+    +get_gradient(features: torch.Tensor, points: torch.Tensor): torch.Tensor
+}
+
+class SDFModel {
+    +encoder: PointEncoder
+    +decoder: NeuralImplicitField
+    +point_num: int
+
+    +__init__(point_num: int, feature_dim: int)
+    +forward(points: torch.Tensor, query_points: torch.Tensor): torch.Tensor
+    +get_feature(points: torch.Tensor): torch.Tensor
+    +get_sdf(features: torch.Tensor, query_points: torch.Tensor): torch.Tensor
+    +freeze_model(): void
+}
+
+SDFModel *-- PointEncoder : composition
+SDFModel *-- NeuralImplicitField : composition
+
+class FeatureExtractor {
+    + rgb: RGBModel
+    + sdf: SDFModel
+    + bank: MemoryBank
+
+    + __init__(self, feature_dim: int, n_components: int, method: str, image_size: int, point_num: int)
+    + extract_rgb_features(self, image: torch.Tensor) -> torch.Tensor:
+    + extract_sdf_features(self, points: torch.Tensor, points_idx: torch.Tensor) -> Tuple[torch.Tensor, List[torch.Tensor]]:
+    + compute_anomaly_map(self, features: torch.Tensor, reference_features: torch.Tensor, method: str) -> Tuple[torch.Tensor, float]:
+}
+
+abstract class BaseFeatureExtractor {
+    +extract_features(data: Any): torch.Tensor
+    +compute_anomaly_map(features: torch.Tensor, reference_features: torch.Tensor): torch.Tensor
+}
+
+class MemoryBank {
+    + rgb_features: List[torch.Tensor]
+    + sdf_features: List[torch.Tensor]
+    + indices: List[torch.Tensor]
+    + rgb_features_tensor: Optional[torch.Tensor]
+    + sdf_features_tensor: Optional[torch.Tensor]
+    + indices_tensor: Optional[torch.Tensor]
+    + is_finalized: bool
+
+    + __init__(): void
+    + add_features(features: torch.Tensor, indices: Optional[torch.Tensor] = None): void
+    + find_nearest_features(query_features: torch.Tensor, k: int = 10): Tuple[torch.Tensor, torch.Tensor]
+    + finalize(): void
+    + save(directory: str): void
+    + load(path: str, name: Optional[str] = None): MemoryBank
+}
+
+FeatureExtractor o-- RGBModel : composition
+FeatureExtractor o-- SDFModel : composition
+FeatureExtractor o-- MemoryBank : composition
+
+BaseFeatureExtractor <|.. FeatureExtractor
+
+@enduml
