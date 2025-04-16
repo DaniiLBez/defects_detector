@@ -80,15 +80,15 @@ class Features(torch.nn.Module):
         self.origin_f_map[use_f_idices] = np.array(range(use_f_idices.shape[0]),dtype=int)
         self.origin_f_map = torch.Tensor(self.origin_f_map).long()
         
-    def Dict_compute_rgb_map(self, rgb_patch_28, rgb_features_indices, lib_idices, mode='testing', is_dict=True):
+    def Dict_compute_rgb_map(self, rgb_patch_28, rgb_features_indices, lib_indices, mode='testing', is_dict=True):
         rgb_lib = self.rgb_patch_lib
-        lib_idices = torch.unique(lib_idices.flatten()).tolist()
+        lib_indices = torch.unique(lib_indices.flatten()).tolist()
         s_map_size28 = torch.zeros(28*28)
         pdist = torch.nn.PairwiseDistance(p=2, eps= 1e-12)
 
         ### Get shape guide RGB features which stored in the memory ###
         rgb_indices_28 = []
-        for patch_idx in lib_idices:
+        for patch_idx in lib_indices:
             _f_idx_28 = self.origin_f_map[self.rgb_f_idx_patch_lib[patch_idx]]
             rgb_indices_28.append(_f_idx_28)
             

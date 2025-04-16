@@ -4,7 +4,7 @@ from defects_detector.preprocessing.plane_remover.service import PreprocessingSe
 from defects_detector.preprocessing.plane_remover.mvtec import MVTec3DPreprocessingService
 
 def main():
-    parser = argparse.ArgumentParser(description='Preprocess MVTec 3D-AD point clouds')
+    parser = argparse.ArgumentParser(description='Preprocess point clouds')
 
     # Create mutually exclusive group for processing options
     group = parser.add_mutually_exclusive_group(required=True)

@@ -2,17 +2,20 @@ from abc import ABC, abstractmethod
 import torch
 from typing import Any, Dict, List, Tuple, Optional
 
+from defects_detector.core.features.rgb import RGBFeatureExtractor
+from defects_detector.utils.utils import KNNGaussianBlur
+
 
 class BaseFeatureExtractor(ABC):
     """Базовый абстрактный класс для извлечения признаков"""
 
     @abstractmethod
-    def extract_features(self, data: Any) -> torch.Tensor:
+    def extract_features(self, *args: Any):
         """Извлекает признаки из входных данных"""
         pass
 
     @abstractmethod
-    def compute_anomaly_map(self, features: torch.Tensor, reference_features: torch.Tensor) -> torch.Tensor:
+    def compute_anomaly_map(self, *args: Any):
         """Вычисляет карту аномалий на основе сравнения признаков"""
         pass
 
@@ -51,9 +54,7 @@ class MemoryBank:
 class FeatureExtractor:
     """Экстрактор признаков, объединяющий RGB и SDF подходы"""
 
-    def __init__(self, feature_dim: int, n_components: int,
-                 method: str = 'RGB_SDF', image_size: int = 224,
-                 point_num: int = 1024):
+    def __init__(self, rgb: RGBFeatureExtractor, bank: MemoryBank):
         """
         Инициализирует экстрактор признаков
 
@@ -64,7 +65,7 @@ class FeatureExtractor:
             image_size: Размер входного изображения
             point_num: Количество точек в облаке точек
         """
-        pass
+        self.blur = KNNGaussianBlur(4)
 
     def extract_rgb_features(self, image: torch.Tensor) -> torch.Tensor:
         """

@@ -3,6 +3,8 @@ import torch.nn as nn
 import torch.nn.functional as F
 import numpy as np
 
+from defects_detector.core.features.features_extractor import BaseFeatureExtractor
+
 
 def safe_norm(x, epsilon=1e-12, axis=None):
     """Calculate norm with numerical stability"""
@@ -171,3 +173,112 @@ class SDFModel(nn.Module):
         """Freeze all model parameters"""
         for param in self.parameters():
             param.requires_grad_(False)
+
+
+class SDFFeatureExtractor(BaseFeatureExtractor):
+    """SDF feature extractor for point clouds"""
+
+    def __init__(self, model: SDFModel, image_size, feature_size, batch_size=1):
+        super().__init__()
+        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        self.sdf_model = model.to(self.device).eval()
+
+        self.image_size = image_size
+        self.feature_size = feature_size
+        self.batch_size = batch_size
+
+        self.resize = torch.nn.AdaptiveAvgPool2d((feature_size, feature_size))
+        self.average = torch.nn.AvgPool2d(3, stride=1)
+
+    def extract_features(self, points_all, points_idx) -> torch.Tensor:
+        """Извлекает признаки из входных данных"""
+
+        def process_patch(patch):
+            points = points_all[patch].reshape(-1, self.sdf_model.point_num, 3)
+            return self.sdf_model.get_feature(points.to(self.device))
+
+        return torch.cat([process_patch(patch) for patch in range(len(points_all))], dim=0)
+
+
+    def compute_anomaly_map(self,
+                            features: torch.Tensor,
+                            reference_features: torch.Tensor,
+                            indices: torch.Tensor,
+                            **kwargs):
+        """Вычисляет карту аномалий на основе сравнения признаков"""
+
+
+
+    def get_score_map(self, features: torch.Tensor, points_all, points_idx):
+        """
+        Создает карту оценок аномалий на основе SDF-признаков
+
+        Args:
+            features: Извлеченные признаки формы [N, feature_dim]
+            points_all: Список облаков точек для оценки
+            points_idx: Список индексов точек, соответствующих пикселям изображения
+
+        Returns:
+            Карта оценок размером [image_size, image_size]
+        """
+        # Инициализация пустой карты
+        score_map = np.zeros((self.image_size * self.image_size), dtype=np.float32)
+
+        # Обработка каждого патча
+        for patch_idx, (points, indices) in enumerate(zip(points_all, points_idx)):
+            # Проверка корректности входных данных
+            if points.shape[1] != self.sdf_model.point_num:
+                print(f"Error! Expected {self.sdf_model.point_num} points, got {points.shape[1]}")
+                continue
+
+            # Извлечение SDF-значений для патча
+            sdf_values = self._compute_sdf_values(
+                features[patch_idx],
+                points,
+            )
+
+            # Обновление карты оценок
+            score_map = self._update_score_map(
+                score_map,
+                sdf_values,
+                indices[0].reshape(self.sdf_model.point_num).cpu().numpy()
+            )
+
+        return torch.tensor(score_map.reshape(1, 1, self.image_size, self.image_size))
+
+    def _compute_sdf_values(self, feature: torch.Tensor,
+                            points: torch.Tensor) -> np.ndarray:
+        """
+        Вычисляет значения SDF для патча точек
+        """
+        # Преобразование данных в нужный формат
+        points = points.reshape(-1, self.sdf_model.point_num, 3)
+
+        # Подготовка признаков и точек
+        point_feature = torch.unsqueeze(feature, 0).repeat(1, self.sdf_model.point_num, 1).to(self.device)
+        point_target = points[0, :].reshape(self.batch_size, self.sdf_model.point_num, 3).to(self.device)
+
+        # Получение значений SDF
+        with torch.no_grad():
+            sdf_values = self.sdf_model.get_sdf(point_feature, point_target)
+
+        # Преобразование в numpy и взятие абсолютных значений
+        return np.abs(sdf_values.detach().cpu().numpy().reshape(-1))
+
+    @staticmethod
+    def _update_score_map(score_map: np.ndarray,
+                          sdf_values: np.ndarray,
+                          indices: np.ndarray) -> np.ndarray:
+        """
+        Обновляет карту оценок новыми SDF-значениями
+        """
+        # Создаем временную карту для патча
+        patch_map = np.zeros_like(score_map)
+
+        # Заполняем временную карту значениями SDF
+        for i, idx in enumerate(indices):
+            patch_map[idx] = sdf_values[i]
+
+        # Объединяем с общей картой (выбираем максимальное значение для каждого пикселя)
+
+        return np.where(score_map == 0, patch_map, np.minimum(score_map, patch_map))
