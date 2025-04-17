@@ -2,6 +2,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import numpy as np
+from sklearn.decomposition import sparse_encode
 
 from defects_detector.core.features.features_extractor import BaseFeatureExtractor
 
@@ -201,13 +202,36 @@ class SDFFeatureExtractor(BaseFeatureExtractor):
 
 
     def compute_anomaly_map(self,
-                            features: torch.Tensor,
-                            reference_features: torch.Tensor,
-                            indices: torch.Tensor,
-                            **kwargs):
+                            reference_features: torch.Tensor, knn_idx,
+                            points_all, points_idx,
+                            ):
         """Вычисляет карту аномалий на основе сравнения признаков"""
+        pdist = torch.nn.PairwiseDistance(p=2, eps=1e-12)
+        features = self.extract_features(points_all, points_idx)
 
+        features_cpu, reference_features_cpu = features.cpu(), reference_features.cpu()
+        reconstructed_features = []
 
+        for patch in range(knn_idx.shape[0]):
+            dictionary = reference_features[knn_idx[patch]]
+
+            code = sparse_encode(
+                X=features_cpu[patch].view(1, -1),
+                dictionary=dictionary,
+                algorithm='omp', n_nonzero_coefs=3, alpha=1e-10
+            )
+
+            # Реконструируем признак с помощью найденного кода
+            reconstructed = torch.from_numpy(
+                np.dot(code, dictionary)
+            ).float()
+
+            reconstructed_features.append(reconstructed)
+
+        reconstructed_features = torch.cat(reconstructed_features, 0)
+        score = torch.max(pdist(features, reconstructed_features))
+        anomaly_map = self.get_score_map(reconstructed_features, points_all, points_idx)
+        return anomaly_map, score
 
     def get_score_map(self, features: torch.Tensor, points_all, points_idx):
         """
