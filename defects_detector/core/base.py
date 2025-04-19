@@ -15,11 +15,20 @@ class DefectDetectionBase(ABC):
         pass
 
     @abstractmethod
-    def evaluate(self, data_loader: Any) -> Dict[str, float]:
-        """Evaluate model on test data"""
+    def predict(self, data: Dict[str, Any]) -> Dict[str, Any]:
+        """Predict defects in a single sample"""
+        pass
+
+
+class BaseFeatureExtractor(ABC):
+    """Базовый абстрактный класс для извлечения признаков"""
+
+    @abstractmethod
+    def extract_features(self, *args: Any):
+        """Извлекает признаки из входных данных"""
         pass
 
     @abstractmethod
-    def predict(self, data: Dict[str, Any]) -> Dict[str, Any]:
-        """Predict defects in a single sample"""
+    def compute_anomaly_map(self, *args: Any):
+        """Вычисляет карту аномалий на основе сравнения признаков"""
         pass

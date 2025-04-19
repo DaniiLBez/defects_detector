@@ -4,7 +4,7 @@ import torch.nn.functional as F
 import numpy as np
 from sklearn.decomposition import sparse_encode
 
-from defects_detector.core.features.features_extractor import BaseFeatureExtractor
+from defects_detector.core.base import BaseFeatureExtractor
 
 
 def safe_norm(x, epsilon=1e-12, axis=None):

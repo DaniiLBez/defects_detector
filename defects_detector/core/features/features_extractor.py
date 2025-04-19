@@ -1,26 +1,10 @@
-from abc import ABC, abstractmethod
-
 import numpy as np
 import torch
-from typing import Any, Dict, List, Tuple, Optional
+from typing import Optional
 
 from defects_detector.core.features.rgb import RGBFeatureExtractor
 from defects_detector.core.features.sdf import SDFFeatureExtractor
 from defects_detector.utils.utils import KNNGaussianBlur, get_relative_rgb_f_indices
-
-
-class BaseFeatureExtractor(ABC):
-    """Базовый абстрактный класс для извлечения признаков"""
-
-    @abstractmethod
-    def extract_features(self, *args: Any):
-        """Извлекает признаки из входных данных"""
-        pass
-
-    @abstractmethod
-    def compute_anomaly_map(self, *args: Any):
-        """Вычисляет карту аномалий на основе сравнения признаков"""
-        pass
 
 
 class MemoryBank:
@@ -42,7 +26,7 @@ class MemoryBank:
         self.indices.append(indices)
 
 
-    def find_nearest_features(self, query_features: torch.Tensor, k: int = 10, **kwargs) -> Tuple[torch.Tensor, torch.Tensor]:
+    def find_nearest_features(self, query_features: torch.Tensor, k: int = 10, **kwargs):
         """Находит ближайшие признаки в банке памяти к заданным признакам запроса"""
         patch_lib = self.sdf_features_tensor
         dist = torch.cdist(query_features, patch_lib)
@@ -149,6 +133,9 @@ class FeatureExtractor:
                     sdf: Экземпляр SDFFeatureExtractor для работы с SDF признаками.
                     bank: Экземпляр MemoryBank для хранения эталонных признаков.
                 """
+
+        self.image_preds, self.pixel_preds = [], []
+        self.sdf_image_preds, self.rgb_image_preds = [], []
         self.rgb_pixel_preds, self.sdf_pixel_preds = [], []
         self.origin_f_map = []
         self.rgb, self.sdf, self.bank = rgb, sdf, bank
@@ -156,17 +143,17 @@ class FeatureExtractor:
         self.bias, self.weight = 0, 0
         self.blur = KNNGaussianBlur(4)
 
+    def compute_indices(self, points_idx, patch):
+        indices = points_idx[patch].reshape(self.sdf.sdf_model.points_num)
+        # compute the correspoding location of rgb features
+        return get_relative_rgb_f_indices(indices, self.rgb.image_size, self.rgb.feature_size)
+
     def add_features_to_memory(self, sample, data_id):
         (image, points, points_idx) = sample
         rgb_features = self.rgb.extract_features(image)
         sdf_features = self.sdf.extract_features(points, points_idx)
 
-        def compute_indices(patch):
-            indices = points_idx[patch].reshape(self.sdf.sdf_model.points_num)
-            # compute the correspoding location of rgb features
-            return get_relative_rgb_f_indices(indices, self.rgb.image_size, self.rgb.feature_size)
-
-        rgb_indices = [data_id * self.rgb.feature_size**2 + compute_indices(patch) for patch in range(len(points))]
+        rgb_indices = [data_id * self.rgb.feature_size**2 + self.compute_indices(points_idx, patch) for patch in range(len(points))]
         self.bank.add_features(rgb_features, sdf_features, rgb_indices)
 
     def foreground_subsampling(self):
@@ -222,4 +209,107 @@ class FeatureExtractor:
             self.weight = (sdf_upper - sdf_lower) / rgb_range
 
         self.bias = sdf_lower - self.weight * rgb_lower
+
+    def predict_align_data(self, sample):
+        """
+        Предсказывает данные для выравнивания.
+
+        Args:
+            sample: Входные данные для предсказания
+        """
+        image, points_all, points_idx = sample
+
+        with torch.no_grad():
+            # Извлечение SDF признаков
+            sdf_features = self.sdf.extract_features(points_all, points_idx)
+
+            # Поиск ближайших признаков в режиме выравнивания
+            knn_indices = self.bank.find_nearest_features(sdf_features, k=10, mode='alignment')
+
+            sdf_map, sdf_score = self.sdf.compute_anomaly_map(
+                self.bank.sdf_features_tensor,
+                knn_indices,
+                points_all,
+                points_idx,
+            )
+
+            # Извлечение RGB признаков
+            rgb_features = self.rgb.extract_features(image)
+            rgb_lib_indices = torch.unique(knn_indices.flatten()).tolist()
+            rgb_reference_features = self.bank.rgb_features_tensor[torch.unique(
+                torch.cat([self.origin_f_map[self.bank.indices_tensor[idx]] for idx in rgb_lib_indices], dim=0)
+            )]
+            rgb_indices = [self.compute_indices(points_idx, patch) for patch in range(len(points_all))]
+
+            rgb_map, rgb_score = self.rgb.compute_anomaly_map(
+                rgb_features,
+                rgb_reference_features,
+                torch.tensor(rgb_indices, device=self.rgb.device),
+                mode='alignment',
+            )
+
+            rgb_map, sdf_map = self.blur(rgb_map), self.blur(sdf_map)
+
+            # image_level
+            self.sdf_image_preds.append(sdf_score.numpy())
+            self.rgb_image_preds.append(rgb_score.numpy())
+            # pixel_level
+            self.rgb_pixel_preds.extend(rgb_map.flatten().numpy())
+            self.sdf_pixel_preds.extend(sdf_map.flatten().numpy())
+
+    def predict(self, sample):
+        """
+        Предсказывает аномалии на основе входных данных.
+        Args:
+            sample: Входные данные для предсказания
+        """
+
+        image, points_all, points_idx = sample
+        with torch.no_grad():
+            # Извлечение SDF признаков
+            sdf_features = self.sdf.extract_features(points_all, points_idx)
+
+            # Поиск ближайших признаков в режиме выравнивания
+            knn_indices = self.bank.find_nearest_features(sdf_features, k=10, mode='alignment')
+
+            sdf_map, sdf_score = self.sdf.compute_anomaly_map(
+                self.bank.sdf_features_tensor,
+                knn_indices,
+                points_all,
+                points_idx,
+            )
+
+            ############### RGB PATCH ###############
+            # Извлечение RGB признаков
+            rgb_features = self.rgb.extract_features(image)
+            rgb_lib_indices = torch.unique(knn_indices.flatten()).tolist()
+            rgb_reference_features = self.bank.rgb_features_tensor[torch.unique(
+                torch.cat([self.origin_f_map[self.bank.indices_tensor[idx]] for idx in rgb_lib_indices], dim=0)
+            )]
+            rgb_indices = [self.compute_indices(points_idx, patch) for patch in range(len(points_all))]
+
+            rgb_map, rgb_score = self.rgb.compute_anomaly_map(
+                rgb_features,
+                rgb_reference_features,
+                torch.tensor(rgb_indices, device=self.rgb.device),
+            )############### END RGB PATCH ###########
+
+            image_score = sdf_score * rgb_score
+            new_rgb_map = rgb_map * self.weight + self.bias
+            new_rgb_map = torch.clip(new_rgb_map, min=0, max=new_rgb_map.max())
+            pixel_map = torch.maximum(new_rgb_map, sdf_map)
+
+            sdf_map, rgb_map, pixel_map = map(self.blur, (sdf_map, rgb_map, pixel_map))
+
+            # self.image_list.append(image.squeeze().numpy())
+            ##### Record Image Level Score #####
+            self.sdf_image_preds.append(sdf_score.numpy())
+            self.rgb_image_preds.append(rgb_score.numpy())
+            self.image_preds.append(image_score.numpy())
+
+            ##### Record Pixel Level Score #####
+            self.sdf_pixel_preds.extend(sdf_map.flatten().numpy())
+            self.rgb_pixel_preds.extend(rgb_map.flatten().numpy())
+            self.pixel_preds.extend(pixel_map.flatten().numpy())
+
 

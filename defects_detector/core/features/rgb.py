@@ -3,7 +3,7 @@ import torch
 import timm
 from sklearn.decomposition import sparse_encode
 
-from defects_detector.core.features.features_extractor import BaseFeatureExtractor
+from defects_detector.core.base import BaseFeatureExtractor
 
 
 class RGBModel(torch.nn.Module):
