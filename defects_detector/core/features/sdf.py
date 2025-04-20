@@ -59,20 +59,16 @@ class NeuralImplicitField(nn.Module):
 
         # Create 7 hidden layers with weight normalization
         for i in range(7):
-            layer = nn.Linear(512, 512)
-            torch.nn.init.constant_(layer.bias, 0.0)
-            torch.nn.init.normal_(layer.weight, 0.0, np.sqrt(2) / np.sqrt(512))
-            layer = nn.utils.weight_norm(layer)
-            setattr(self, f"fc{i+4}", layer)
+            fc4 = nn.Linear(512, 512)
+            torch.nn.init.constant_(fc4.bias, 0.0)
+            torch.nn.init.normal_(fc4.weight, 0.0, np.sqrt(2) / np.sqrt(512))
+            fc4 = nn.utils.weight_norm(fc4)
+            setattr(self, "fc4" + str(i), fc4)
 
         # Output layer with special initialization for SDF
-        self.fc_out = nn.Linear(512, 1)
-        torch.nn.init.constant_(self.fc_out.bias, -0.5)
-        torch.nn.init.normal_(
-            self.fc_out.weight,
-            mean=2*np.sqrt(np.pi) / np.sqrt(512),
-            std=0.000001
-        )
+        self.fc5 = nn.Linear(512, 1)
+        torch.nn.init.constant_(self.fc5.bias, -0.5)
+        torch.nn.init.normal_(self.fc5.weight, mean=2 * np.sqrt(np.pi) / np.sqrt(512), std=0.000001)
 
     def forward(self, features, points):
         """
@@ -94,11 +90,11 @@ class NeuralImplicitField(nn.Module):
 
         # Process through hidden layers
         for i in range(7):
-            layer = getattr(self, f"fc{i+4}")
-            net = F.relu(layer(net))
+            fc4 = getattr(self, "fc4" + str(i))
+            net = F.relu(fc4(net))
 
         # Output SDF values
-        sdf = self.fc_out(net)
+        sdf = self.fc5(net)
         return sdf
 
     def get_gradient(self, features, points):
@@ -131,7 +127,7 @@ class SDFModel(nn.Module):
     def __init__(self, point_num=1024, feature_dim=128):
         super().__init__()
         self.encoder = PointEncoder(in_channels=3, feature_dim=feature_dim)
-        self.decoder = NeuralImplicitField(feature_dim=feature_dim)
+        self.NIF = NeuralImplicitField(feature_dim=feature_dim)
         self.point_num = point_num
 
     def forward(self, points, query_points):
@@ -158,7 +154,7 @@ class SDFModel(nn.Module):
         )
 
         # Get surface points
-        surface_points = self.decoder.get_gradient(point_features, query_points)
+        surface_points = self.NIF.get_gradient(point_features, query_points)
         return surface_points
 
     def get_feature(self, points):
@@ -168,7 +164,7 @@ class SDFModel(nn.Module):
 
     def get_sdf(self, features, query_points):
         """Get SDF values for query points given features"""
-        return self.decoder(features, query_points)
+        return self.NIF(features, query_points)
 
     def freeze_model(self):
         """Freeze all model parameters"""
@@ -229,7 +225,7 @@ class SDFFeatureExtractor(BaseFeatureExtractor):
             reconstructed_features.append(reconstructed)
 
         reconstructed_features = torch.cat(reconstructed_features, 0)
-        score = torch.max(pdist(features, reconstructed_features))
+        score = torch.max(pdist(features_cpu, reconstructed_features))
         anomaly_map = self.get_score_map(reconstructed_features, points_all, points_idx)
         return anomaly_map, score
 

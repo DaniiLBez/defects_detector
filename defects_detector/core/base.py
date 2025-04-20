@@ -15,7 +15,7 @@ class DefectDetectionBase(ABC):
         pass
 
     @abstractmethod
-    def predict(self, data: Dict[str, Any]) -> Dict[str, Any]:
+    def predict(self) -> Dict[str, Any]:
         """Predict defects in a single sample"""
         pass
 
@@ -31,4 +31,13 @@ class BaseFeatureExtractor(ABC):
     @abstractmethod
     def compute_anomaly_map(self, *args: Any):
         """Вычисляет карту аномалий на основе сравнения признаков"""
+        pass
+
+
+class DataLoaderBase(ABC):
+    """Базовый абстрактный класс для загрузки данных"""
+
+    @abstractmethod
+    def load_data(self, *args: Any):
+        """Загружает данные из источника"""
         pass

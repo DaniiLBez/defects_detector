@@ -23,13 +23,13 @@ class MemoryBank:
         """Добавляет признаки в банк памяти"""
         self.rgb_features.append(rgb_features.to("cpu"))
         self.sdf_features.append(sdf_features.to("cpu"))
-        self.indices.append(indices)
+        self.indices.extend(indices)
 
 
     def find_nearest_features(self, query_features: torch.Tensor, k: int = 10, **kwargs):
         """Находит ближайшие признаки в банке памяти к заданным признакам запроса"""
         patch_lib = self.sdf_features_tensor
-        dist = torch.cdist(query_features, patch_lib)
+        dist = torch.cdist(query_features.cpu(), patch_lib)
         _, knn_idx = torch.topk(dist, k=k + 1, largest=False)
         return knn_idx[:, 1:] if kwargs.get("mode", "testing") == 'alignment' else knn_idx[:, :-1]
 
@@ -144,7 +144,7 @@ class FeatureExtractor:
         self.blur = KNNGaussianBlur(4)
 
     def compute_indices(self, points_idx, patch):
-        indices = points_idx[patch].reshape(self.sdf.sdf_model.points_num)
+        indices = points_idx[patch].reshape(self.sdf.sdf_model.point_num)
         # compute the correspoding location of rgb features
         return get_relative_rgb_f_indices(indices, self.rgb.image_size, self.rgb.feature_size)
 
@@ -164,7 +164,9 @@ class FeatureExtractor:
         indices = torch.unique(self.bank.indices_tensor)
 
         self.bank.rgb_features_tensor = rgb_lib[indices]
+        self.origin_f_map = np.full(shape=(rgb_lib.shape[0]), fill_value=-1)
         self.origin_f_map[indices] = torch.arange(indices.shape[0], dtype=torch.long)
+        self.origin_f_map = torch.Tensor(self.origin_f_map).long()
 
     @staticmethod
     def compute_distribution_params(pixel_preds):
@@ -236,6 +238,7 @@ class FeatureExtractor:
             # Извлечение RGB признаков
             rgb_features = self.rgb.extract_features(image)
             rgb_lib_indices = torch.unique(knn_indices.flatten()).tolist()
+            print(self.origin_f_map)
             rgb_reference_features = self.bank.rgb_features_tensor[torch.unique(
                 torch.cat([self.origin_f_map[self.bank.indices_tensor[idx]] for idx in rgb_lib_indices], dim=0)
             )]
@@ -301,7 +304,6 @@ class FeatureExtractor:
 
             sdf_map, rgb_map, pixel_map = map(self.blur, (sdf_map, rgb_map, pixel_map))
 
-            # self.image_list.append(image.squeeze().numpy())
             ##### Record Image Level Score #####
             self.sdf_image_preds.append(sdf_score.numpy())
             self.rgb_image_preds.append(rgb_score.numpy())
