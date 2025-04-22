@@ -44,8 +44,10 @@ class ShapeGuidedDetector(DefectDetectionBase):
 
         memory_bank_path = self.config.get("memory_bank", None)
         # Банк памяти для хранения эталонных признаков
-        self.memory_bank = MemoryBank.load(memory_bank_path) \
-            if memory_bank_path and os.path.exists(memory_bank_path) else MemoryBank()
+        self.memory_bank = MemoryBank()
+        if memory_bank_path:
+            # Загрузка предварительно сохраненного банка памяти
+            self.memory_bank = self.memory_bank.load(memory_bank_path)
 
         self.data_loader = MVTecDataLoader(self.image_size, config.get("image_path"), config.get("grid_path"))
 
@@ -106,13 +108,12 @@ class ShapeGuidedDetector(DefectDetectionBase):
 
         # Финализация банка памяти для последующих быстрых поисков
         self.memory_bank.finalize()
-
-        # Подвыборка переднего плана для улучшения эффективности
-        self.feature_extractor.foreground_subsampling()
-
         # Сохранение банка памяти, если указана директория
         if self.output_dir and self.config.get("save_memory_bank", False):
             self.memory_bank.save(os.path.join(self.output_dir, "memory_bank"))
+
+        # Подвыборка переднего плана для улучшения эффективности
+        self.feature_extractor.foreground_subsampling()
 
     def align(self, data_loader: Any) -> Tuple[float, float]:
         """

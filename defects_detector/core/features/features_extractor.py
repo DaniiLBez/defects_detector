@@ -104,7 +104,7 @@ class MemoryBank:
         sdf_path = os.path.join(directory, "sdf_features.pt")
         idx_path = os.path.join(directory, "indices.pt")
 
-        if not (os.path.exists(rgb_path) and os.path.exists(sdf_path) and os.path.exists(idx_path)):
+        if not all(map(os.path.exists, [rgb_path, sdf_path, idx_path])):
             raise FileNotFoundError(f"Файлы банка памяти не найдены в {directory}")
 
         # Создаем новый экземпляр класса
@@ -238,7 +238,6 @@ class FeatureExtractor:
             # Извлечение RGB признаков
             rgb_features = self.rgb.extract_features(image)
             rgb_lib_indices = torch.unique(knn_indices.flatten()).tolist()
-            print(self.origin_f_map)
             rgb_reference_features = self.bank.rgb_features_tensor[torch.unique(
                 torch.cat([self.origin_f_map[self.bank.indices_tensor[idx]] for idx in rgb_lib_indices], dim=0)
             )]
