@@ -197,108 +197,43 @@ class SDFFeatureExtractor(BaseFeatureExtractor):
         return torch.cat([process_patch(patch) for patch in range(len(points_all))], dim=0)
 
 
-    def compute_anomaly_map(self,
-                            reference_features: torch.Tensor, knn_idx,
-                            points_all, points_idx,
-                            ):
-        """Вычисляет карту аномалий на основе сравнения признаков"""
-        pdist = torch.nn.PairwiseDistance(p=2, eps=1e-12)
-        features = self.extract_features(points_all, points_idx)
-
-        features_cpu, reference_features_cpu = features.cpu(), reference_features.cpu()
-        reconstructed_features = []
-
-        for patch in range(knn_idx.shape[0]):
-            dictionary = reference_features[knn_idx[patch]]
-
-            code = sparse_encode(
-                X=features_cpu[patch].view(1, -1),
-                dictionary=dictionary,
-                algorithm='omp', n_nonzero_coefs=3, alpha=1e-10
-            )
-
-            # Реконструируем признак с помощью найденного кода
-            reconstructed = torch.from_numpy(
-                np.dot(code, dictionary)
-            ).float()
-
-            reconstructed_features.append(reconstructed)
-
-        reconstructed_features = torch.cat(reconstructed_features, 0)
-        score = torch.max(pdist(features_cpu, reconstructed_features))
-        anomaly_map = self.get_score_map(reconstructed_features, points_all, points_idx)
-        return anomaly_map, score
-
-    def get_score_map(self, features: torch.Tensor, points_all, points_idx):
+    def get_score_map(self, feature: torch.Tensor, points_all, points_idx):
         """
         Создает карту оценок аномалий на основе SDF-признаков
 
         Args:
-            features: Извлеченные признаки формы [N, feature_dim]
+            feature: Извлеченные признаки формы [N, feature_dim]
             points_all: Список облаков точек для оценки
             points_idx: Список индексов точек, соответствующих пикселям изображения
 
         Returns:
             Карта оценок размером [image_size, image_size]
         """
-        # Инициализация пустой карты
-        score_map = np.zeros((self.image_size * self.image_size), dtype=np.float32)
+        s_map = np.full((self.image_size * self.image_size), 0, dtype=float)
+        for patch in range(len(points_all)):
 
-        # Обработка каждого патча
-        for patch_idx, (points, indices) in enumerate(zip(points_all, points_idx)):
-            # Проверка корректности входных данных
-            if points.shape[1] != self.sdf_model.point_num:
-                print(f"Error! Expected {self.sdf_model.point_num} points, got {points.shape[1]}")
+            if points_all[patch].shape[1] != self.sdf_model.point_num:
+                print('Error!', points_all[patch].shape)
                 continue
 
-            # Извлечение SDF-значений для патча
-            sdf_values = self._compute_sdf_values(
-                features[patch_idx],
-                points,
-            )
+            points = points_all[patch].reshape(-1, self.sdf_model.point_num, 3)
+            indices = points_idx[patch].reshape(-1, self.sdf_model.point_num)
 
-            # Обновление карты оценок
-            score_map = self._update_score_map(
-                score_map,
-                sdf_values,
-                indices[0].reshape(self.sdf_model.point_num).cpu().numpy()
-            )
+            point_feature = torch.tile(torch.unsqueeze(feature[patch], 0), [1, self.sdf_model.point_num, 1])
+            index = indices[0].reshape(self.sdf_model.point_num)
+            point_target = points[0, :].reshape(self.batch_size, self.sdf_model.point_num, 3)
+            point_target = point_target.to(self.device)
+            point_feature = point_feature.to(self.device)
+            sdf_c = self.sdf_model.get_sdf(point_feature, point_target)
 
-        return torch.tensor(score_map.reshape(1, 1, self.image_size, self.image_size))
+            sdf_c = np.abs(sdf_c.detach().cpu().numpy().reshape(-1))
+            index = index.cpu().numpy()
 
-    def _compute_sdf_values(self, feature: torch.Tensor,
-                            points: torch.Tensor) -> np.ndarray:
-        """
-        Вычисляет значения SDF для патча точек
-        """
-        # Преобразование данных в нужный формат
-        points = points.reshape(-1, self.sdf_model.point_num, 3)
+            tmp_map = np.full((self.image_size * self.image_size), 0, dtype=float)
+            for L in range(sdf_c.shape[0]):
+                tmp_map[index[L]] = sdf_c[L]
+                if (s_map[index[L]] == 0) or (s_map[index[L]] > sdf_c[L]):
+                    s_map[index[L]] = sdf_c[L]
 
-        # Подготовка признаков и точек
-        point_feature = torch.unsqueeze(feature, 0).repeat(1, self.sdf_model.point_num, 1).to(self.device)
-        point_target = points[0, :].reshape(self.batch_size, self.sdf_model.point_num, 3).to(self.device)
-
-        # Получение значений SDF
-        with torch.no_grad():
-            sdf_values = self.sdf_model.get_sdf(point_feature, point_target)
-
-        # Преобразование в numpy и взятие абсолютных значений
-        return np.abs(sdf_values.detach().cpu().numpy().reshape(-1))
-
-    @staticmethod
-    def _update_score_map(score_map: np.ndarray,
-                          sdf_values: np.ndarray,
-                          indices: np.ndarray) -> np.ndarray:
-        """
-        Обновляет карту оценок новыми SDF-значениями
-        """
-        # Создаем временную карту для патча
-        patch_map = np.zeros_like(score_map)
-
-        # Заполняем временную карту значениями SDF
-        for i, idx in enumerate(indices):
-            patch_map[idx] = sdf_values[i]
-
-        # Объединяем с общей картой (выбираем максимальное значение для каждого пикселя)
-
-        return np.where(score_map == 0, patch_map, np.minimum(score_map, patch_map))
+        s_map = s_map.reshape(1, 1, self.image_size, self.image_size)
+        return torch.tensor(s_map)

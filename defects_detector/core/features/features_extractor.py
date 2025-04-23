@@ -2,6 +2,8 @@ import numpy as np
 import torch
 from typing import Optional
 
+from sklearn.decomposition import sparse_encode
+
 from defects_detector.core.features.rgb import RGBFeatureExtractor
 from defects_detector.core.features.sdf import SDFFeatureExtractor
 from defects_detector.utils.utils import KNNGaussianBlur, get_relative_rgb_f_indices
@@ -210,6 +212,23 @@ class FeatureExtractor:
 
         return lower_bound, upper_bound
 
+    def find_knn_feature(self, feature, mode='testing'):
+        dict_features = []
+        knn_idx = self.bank.find_nearest_features(feature, k=10, mode=mode)
+
+        feature = feature.to('cpu')
+        for patch in range(knn_idx.shape[0]):
+            knn_features = self.bank.sdf_features_tensor[knn_idx[patch]]
+            code_matrix = sparse_encode(X=feature[patch].view(1,-1), dictionary=knn_features, algorithm='omp', n_nonzero_coefs=3, alpha=1e-10)
+            code_matrix = torch.Tensor(code_matrix)
+            sparse_feature = torch.matmul(code_matrix, knn_features) # Sparse representation test rgb feature using the training rgb features stored in the memory.
+            dict_features.append(sparse_feature)
+
+        dict_features = torch.cat(dict_features, 0)
+        pdist = torch.nn.PairwiseDistance(p=2, eps=1e-12)
+        min_val = pdist(feature, dict_features)
+        return dict_features, knn_idx, torch.max(min_val)
+
     def cal_alignment(self):
         """
         Вычисляет параметры для выравнивания распределений SDF и RGB признаков.
@@ -244,14 +263,8 @@ class FeatureExtractor:
             sdf_features = self.sdf.extract_features(points_all, points_idx)
 
             # Поиск ближайших признаков в режиме выравнивания
-            knn_indices = self.bank.find_nearest_features(sdf_features, k=10, mode='alignment')
-
-            sdf_map, sdf_score = self.sdf.compute_anomaly_map(
-                self.bank.sdf_features_tensor,
-                knn_indices,
-                points_all,
-                points_idx,
-            )
+            dict_features, knn_indices, sdf_score = self.find_knn_feature(sdf_features, mode='alignment')
+            sdf_map = self.sdf.get_score_map(dict_features, points_all, points_idx)
 
             # Извлечение RGB признаков
             rgb_features = self.rgb.extract_features(image)
@@ -292,14 +305,8 @@ class FeatureExtractor:
             sdf_features = self.sdf.extract_features(points_all, points_idx)
 
             # Поиск ближайших признаков в режиме выравнивания
-            knn_indices = self.bank.find_nearest_features(sdf_features, k=10)
-
-            sdf_map, sdf_score = self.sdf.compute_anomaly_map(
-                self.bank.sdf_features_tensor,
-                knn_indices,
-                points_all,
-                points_idx,
-            )
+            dict_features, knn_indices, sdf_score = self.find_knn_feature(sdf_features, mode='alignment')
+            sdf_map = self.sdf.get_score_map(dict_features, points_all, points_idx)
 
             # Извлечение RGB признаков
             rgb_features = self.rgb.extract_features(image)

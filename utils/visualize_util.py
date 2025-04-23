@@ -194,7 +194,7 @@ def visualize_smap_distribute(total_map, sdf_map, rgb_map, new_rgb_map, image_si
         plt.savefig(image_file)
         plt.close()
 
-def export_test_image(test_img, scores, path, threshold=0.01):
+def export_test_image(test_img, scores, path, threshold=0.02):
     kernel = morphology.disk(2)
     scores_norm = 1.0 / scores.max()
 
