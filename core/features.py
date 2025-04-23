@@ -174,6 +174,7 @@ class Features(torch.nn.Module):
         sdf_std = np.std(non_zero_sdf_map)
         sdf_lower = sdf_mean - 3 * sdf_std
         sdf_upper = sdf_mean + 3 * sdf_std
+        print(f'sdf_lower:{sdf_lower:.8f}, sdf_upper:{sdf_upper:.8f}')
         # RGB distribution
         rgb_map = np.array(self.rgb_pixel_preds)
         non_zero_indice = np.nonzero(rgb_map)
@@ -182,7 +183,8 @@ class Features(torch.nn.Module):
         rgb_std = np.std(non_zero_rgb_map)
         rgb_lower = rgb_mean - 3 * rgb_std
         rgb_upper = rgb_mean + 3 * rgb_std
-        
+        print(f'rgb_lower:{rgb_lower:.8f}, rgb_upper:{rgb_upper:.8f}')
+
         self.weight = (sdf_upper - sdf_lower) / (rgb_upper - rgb_lower)
         self.bias = sdf_lower - self.weight * rgb_lower
         # new_rgb_map = rgb_map * self.weight  + self.bias

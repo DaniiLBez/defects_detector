@@ -1,14 +1,14 @@
 import argparse
 import os
-import subprocess
 from typing import Dict, Any
 
-import cv2
+import numpy as np
 import yaml
 from torch.utils.data import DataLoader
 
 from defects_detector.core.data import MVTec3DTrain
 from defects_detector.core.shape_guided_detector import ShapeGuidedDetector
+from utils.visualize_util import export_test_image
 
 
 def parse_args():
@@ -84,25 +84,13 @@ def main():
     weight, bias = detector.align(data_loader)
     print(f"Выравнивание завершено, вес: {weight:.6f}, смещение: {bias:.6f}")
 
-    result = detector.predict()
+    detector.predict()
 
     if config.get("visualize", False):
-        # Создаем директорию для визуализаций, если её нет
-        viz_dir = os.path.join(config['output_dir'], "visualizations") if config['output_dir'] else "visualizations"
-        if not os.path.exists(viz_dir):
-            os.makedirs(viz_dir)
+        score_map = np.asarray(detector.feature_extractor.pixel_preds).reshape(-1, detector.image_size, detector.image_size)
+        mask = np.asarray(score_map)
+        export_test_image(detector.feature_extractor.image_list, mask, os.path.join(config["output_dir"], "visualization"))
 
-
-        for k, v in result.items():
-            # Формируем имя файла для сохранения
-            if isinstance(k, str):
-                image_name = os.path.basename(k).split('.')[0]
-            else:
-                image_name = f"sample_{len(result)}"
-
-            # Сохраняем изображение
-            output_path = os.path.join(viz_dir, f"{image_name}_overlay.png")
-            cv2.imwrite(output_path, v["overlay"])
 
 if __name__ == "__main__":
     main()

@@ -113,7 +113,8 @@ class RGBModel(torch.nn.Module):
 class RGBFeatureExtractor(BaseFeatureExtractor):
     def __init__(self, rgb_model: RGBModel, image_size: int = 224, feature_size: int = 28):
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        self.rgb_model = rgb_model.to(self.device).eval()
+        self.rgb_model = rgb_model.to(self.device)
+        self.rgb_model.freeze_parameters(layers=[], freeze_bn=True)
 
         self.image_size = image_size
         self.feature_size = feature_size
@@ -158,7 +159,9 @@ class RGBFeatureExtractor(BaseFeatureExtractor):
         anomaly_map = torch.zeros(self.feature_size * self.feature_size)
         pdist = torch.nn.PairwiseDistance(p=2, eps=1e-12)
 
-        distance = torch.cdist(features, reference_features.to(self.device))
+        features = features[foreground_indices]
+
+        distance = torch.cdist(features, reference_features)
         knn_val, knn_idx = torch.topk(distance, k=5+1, largest=False)
 
         (knn_idx, min_value) = (knn_idx[:, 1:], knn_val[:, 1]) if kwargs.get("mode", "testing") == 'alignment' \

@@ -1,8 +1,8 @@
 import os
 from typing import Dict, Any, Tuple
 
-import numpy as np
 import torch
+from torch.utils.data import DataLoader
 from tqdm import tqdm
 
 from defects_detector.core.base import DefectDetectionBase
@@ -49,7 +49,9 @@ class ShapeGuidedDetector(DefectDetectionBase):
             # Загрузка предварительно сохраненного банка памяти
             self.memory_bank = self.memory_bank.load(memory_bank_path)
 
-        self.data_loader = MVTecDataLoader(self.image_size, config.get("image_path"), config.get("grid_path"))
+        # Параметры загрузчика данных
+        dataset = MVTecDataLoader(self.image_size, config.get("image_path"), config.get("grid_path"))
+        self.data_loader = DataLoader(dataset=dataset, batch_size=1, shuffle=False, num_workers=1, drop_last=False, pin_memory=True)
 
         # Инициализация моделей и экстракторов признаков
         self._initialize_models()
@@ -127,11 +129,10 @@ class ShapeGuidedDetector(DefectDetectionBase):
         """
         print('Вычисление параметров выравнивания признаков')
         with torch.no_grad():
-            for align_id, (sample, _) in enumerate(data_loader):
-                if align_id < 25:  # используем ограниченное количество образцов для выравнивания
-                    self.feature_extractor.predict_align_data(sample)
-                else:
+            for align_id, (sample, _) in enumerate(tqdm(data_loader, desc="Извлечение признаков для выравнивания", total=25)):
+                if align_id >= 25:  # используем ограниченное количество образцов для выравнивания
                     break
+                self.feature_extractor.predict_align_data(sample)
 
         # Вычисление параметров выравнивания
         self.feature_extractor.cal_alignment()
@@ -145,83 +146,12 @@ class ShapeGuidedDetector(DefectDetectionBase):
 
         return self.weight, self.bias
 
-    def predict(self) -> Dict[str, Any]:
+    def predict(self):
         """
-        Предсказание дефектов в одном образце.
-
-        Args:
-            data: Словарь с данными для предсказания
-                image: RGB изображение (тензор или путь к файлу)
-                depth: Карта глубины (тензор или путь к файлу)
-
-        Returns:
-            Словарь с результатами предсказания
-                anomaly_map: Карта аномалий
-                anomaly_score: Общая оценка аномальности
-                sdf_score: Оценка аномальности по SDF
-                rgb_score: Оценка аномальности по RGB
-                overlay: Наложенная визуализация (если визуализация включена)
+        Предсказание дефектов в загруженных образцах.
         """
-        result = {}
-        # Подготовка данных в зависимости от их типа
-        for sample in self.data_loader:
+        for i, sample in enumerate(tqdm(self.data_loader, desc="Предсказание")):
             # Предсказание с использованием экстрактора признаков
             with torch.no_grad():
                 self.feature_extractor.predict(sample)
-
-            # Извлечение результатов
-            anomaly_map = torch.tensor(self.feature_extractor.pixel_preds[-self.image_size * self.image_size:])
-            anomaly_map = anomaly_map.reshape(1, 1, self.image_size, self.image_size)
-
-            rgb_score = self.feature_extractor.rgb_image_preds[-1]
-            sdf_score = self.feature_extractor.sdf_image_preds[-1]
-            anomaly_score = self.feature_extractor.image_preds[-1]
-
-            # Создание результата
-            result[os.path.basename(sample[0])] = {
-                'anomaly_map': anomaly_map,
-                'anomaly_score': float(anomaly_score),
-                'rgb_score': float(rgb_score),
-                'sdf_score': float(sdf_score),
-            }
-
-            # Добавление визуализации, если требуется
-            if self.config.get("visualize", False):
-                overlay = self._create_visualization(sample[0], anomaly_map)
-                result[os.path.basename(sample[0])]['overlay'] = overlay
-
-        return result
-
-
-
-    def _create_visualization(self, image, anomaly_map):
-        """
-        Создание визуализации с наложением карты аномалий на изображение.
-
-        Args:
-            image: Исходное изображение
-            anomaly_map: Карта аномалий
-
-        Returns:
-            Изображение с наложенной картой аномалий
-        """
-        import cv2
-
-        # Преобразование тензоров в numpy массивы при необходимости
-        if isinstance(image, torch.Tensor):
-            image = image.squeeze().permute(1, 2, 0).cpu().numpy()
-            if image.shape[2] == 3:
-                image = (image * 255).astype(np.uint8)
-
-        if isinstance(anomaly_map, torch.Tensor):
-            anomaly_map = anomaly_map.squeeze().cpu().numpy()
-
-        # Нормализация карты аномалий для визуализации
-        anomaly_map_norm = (anomaly_map - anomaly_map.min()) / (anomaly_map.max() - anomaly_map.min() + 1e-8)
-        anomaly_map_colored = cv2.applyColorMap((anomaly_map_norm * 255).astype(np.uint8), cv2.COLORMAP_JET)
-
-        # Наложение карты аномалий на изображение
-        overlay = cv2.addWeighted(image, 0.7, anomaly_map_colored, 0.3, 0)
-
-        return overlay
 

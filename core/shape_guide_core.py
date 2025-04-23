@@ -131,8 +131,8 @@ class ShapeGuide:
         # Just visualize RGB+SDF method and compute its threshold
         if self.viz:
             det_threshold, seg_threshold = self.methods.visualize_result()
-            self.log_file.write('Optimal DET Threshold: {:.2f}\n'.format(det_threshold))
-            self.log_file.write('Optimal SEG Threshold: {:.2f}\n'.format(seg_threshold))
+            print('Optimal DET Threshold: {:.2f}\n'.format(det_threshold))
+            print('Optimal SEG Threshold: {:.2f}\n'.format(seg_threshold))
 
         image_rocaucs = dict()
         pixel_rocaucs = dict()

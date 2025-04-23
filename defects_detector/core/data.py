@@ -84,6 +84,9 @@ class MVTecDataLoader(DataLoaderBase):
             sorted(glob.glob(os.path.join(self.npz_path, 'npz', '*.npz')))
         )]
 
+    def __len__(self):
+        return len(self.samples)
+
     def __getitem__(self, idx: int):
         """
         Загружает один элемент данных по индексу.

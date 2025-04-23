@@ -28,7 +28,7 @@ def export_test_images(test_img, gts, scores, threshold, output_dir):
     image_dirs = os.path.join(output_dir, OUT_DIR ,'images')
     
     if not os.path.isdir(image_dirs):
-        print('Exporting images...')
+        print(threshold)
         os.makedirs(image_dirs, exist_ok=True)
 
         kernel = morphology.disk(2)
@@ -46,7 +46,7 @@ def export_test_images(test_img, gts, scores, threshold, output_dir):
 
             # scores
             score_mask = np.zeros_like(scores[i])
-            score_mask[scores[i] >  threshold] = 1.0
+            score_mask[scores[i] > threshold] = 1.0
             score_mask = morphology.opening(score_mask, kernel)
             score_mask = (255.0*score_mask).astype(np.uint8)
             score_img = mark_boundaries(img, score_mask, color=(1, 0, 0), mode='thick')
@@ -192,4 +192,37 @@ def visualize_smap_distribute(total_map, sdf_map, rgb_map, new_rgb_map, image_si
         ax1.title.set_text("Adjust RGB Distribution")
         
         plt.savefig(image_file)
+        plt.close()
+
+def export_test_image(test_img, scores, path, threshold=0.01):
+    kernel = morphology.disk(2)
+    scores_norm = 1.0 / scores.max()
+
+    for i in tqdm(range(0, len(test_img), 1), desc="export heat map image"):
+        img = test_img[i]
+        img = denormalization(img, IMAGENET_MEAN, IMAGENET_STD)
+
+        # scores
+        score_mask = np.zeros_like(scores[i])
+        score_mask[scores[i] > threshold] = 1.0
+        score_mask = morphology.opening(score_mask, kernel)
+        score_mask = (255.0 * score_mask).astype(np.uint8)
+        score_img = mark_boundaries(img, score_mask, color=(1, 0, 0), mode='thick')
+        score_map = (255.0 * scores[i] * scores_norm).astype(np.uint8)
+        #
+        fig_img, ax_img = plt.subplots(2, 1, figsize=(2 * cm, 4 * cm))
+        for ax_i in ax_img:
+            ax_i.axes.xaxis.set_visible(False)
+            ax_i.axes.yaxis.set_visible(False)
+            ax_i.spines['top'].set_visible(False)
+            ax_i.spines['right'].set_visible(False)
+            ax_i.spines['bottom'].set_visible(False)
+            ax_i.spines['left'].set_visible(False)
+        #
+        plt.subplots_adjust(hspace=0.1, wspace=0.1)
+        ax_img[0].imshow(img, cmap='gray', interpolation='none')
+        ax_img[0].imshow(score_map, cmap='jet', norm=norm, alpha=0.5, interpolation='none')
+        ax_img[1].imshow(score_img)
+        image_file = os.path.join(path, f'{i:08d}.png')
+        fig_img.savefig(image_file, dpi=dpi, format='png', bbox_inches='tight', pad_inches=0.0)
         plt.close()

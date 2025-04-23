@@ -77,6 +77,11 @@ class MemoryBank:
         torch.save(self.sdf_features_tensor, os.path.join(directory, "sdf_features.pt"))
         torch.save(self.indices_tensor, os.path.join(directory, "indices.pt"))
 
+        # Сохраняем исходные списки признаков
+        torch.save(self.rgb_features, os.path.join(directory, "rgb_features_list.pt"))
+        torch.save(self.sdf_features, os.path.join(directory, "sdf_features_list.pt"))
+        torch.save(self.indices, os.path.join(directory, "indices_list.pt"))
+
     @classmethod
     def load(cls, path: str, name: Optional[str] = None) -> "MemoryBank":
         """
@@ -115,7 +120,16 @@ class MemoryBank:
         bank.sdf_features_tensor = torch.load(sdf_path)
         bank.indices_tensor = torch.load(idx_path)
 
-        # Списки оставляем пустыми, так как мы загрузили уже объединенные тензоры
+        # Загружаем исходные списки, если они есть
+        rgb_list_path = os.path.join(directory, "rgb_features_list.pt")
+        sdf_list_path = os.path.join(directory, "sdf_features_list.pt")
+        idx_list_path = os.path.join(directory, "indices_list.pt")
+
+        if all(map(os.path.exists, [rgb_list_path, sdf_list_path, idx_list_path])):
+            bank.rgb_features = torch.load(rgb_list_path)
+            bank.sdf_features = torch.load(sdf_list_path)
+            bank.indices = torch.load(idx_list_path)
+
         bank.is_finalized = True
 
         return bank
@@ -134,6 +148,7 @@ class FeatureExtractor:
                     bank: Экземпляр MemoryBank для хранения эталонных признаков.
                 """
 
+        self.image_list = []
         self.image_preds, self.pixel_preds = [], []
         self.sdf_image_preds, self.rgb_image_preds = [], []
         self.rgb_pixel_preds, self.sdf_pixel_preds = [], []
@@ -203,6 +218,9 @@ class FeatureExtractor:
         sdf_lower, sdf_upper = self.compute_distribution_params(self.sdf_pixel_preds)
         rgb_lower, rgb_upper = self.compute_distribution_params(self.rgb_pixel_preds)
 
+        print(f'SDF lower: {sdf_lower}, SDF upper: {sdf_upper}')
+        print(f'RGB lower: {rgb_lower}, RGB upper: {rgb_upper}')
+
         # Предотвращение деления на ноль
         rgb_range = rgb_upper - rgb_lower
         if abs(rgb_range) < 1e-10:
@@ -239,14 +257,14 @@ class FeatureExtractor:
             rgb_features = self.rgb.extract_features(image)
             rgb_lib_indices = torch.unique(knn_indices.flatten()).tolist()
             rgb_reference_features = self.bank.rgb_features_tensor[torch.unique(
-                torch.cat([self.origin_f_map[self.bank.indices_tensor[idx]] for idx in rgb_lib_indices], dim=0)
+                torch.cat([self.origin_f_map[self.bank.indices[idx]] for idx in rgb_lib_indices], dim=0)
             )]
             rgb_indices = [self.compute_indices(points_idx, patch) for patch in range(len(points_all))]
 
             rgb_map, rgb_score = self.rgb.compute_anomaly_map(
                 rgb_features,
                 rgb_reference_features,
-                torch.tensor(rgb_indices, device=self.rgb.device),
+                torch.unique(torch.cat(rgb_indices, dim=0)),
                 mode='alignment',
             )
 
@@ -267,12 +285,14 @@ class FeatureExtractor:
         """
 
         image, points_all, points_idx = sample
+
+        self.image_list.append(image.squeeze(0).cpu().numpy())
         with torch.no_grad():
             # Извлечение SDF признаков
             sdf_features = self.sdf.extract_features(points_all, points_idx)
 
             # Поиск ближайших признаков в режиме выравнивания
-            knn_indices = self.bank.find_nearest_features(sdf_features, k=10, mode='alignment')
+            knn_indices = self.bank.find_nearest_features(sdf_features, k=10)
 
             sdf_map, sdf_score = self.sdf.compute_anomaly_map(
                 self.bank.sdf_features_tensor,
@@ -281,20 +301,19 @@ class FeatureExtractor:
                 points_idx,
             )
 
-            ############### RGB PATCH ###############
             # Извлечение RGB признаков
             rgb_features = self.rgb.extract_features(image)
             rgb_lib_indices = torch.unique(knn_indices.flatten()).tolist()
             rgb_reference_features = self.bank.rgb_features_tensor[torch.unique(
-                torch.cat([self.origin_f_map[self.bank.indices_tensor[idx]] for idx in rgb_lib_indices], dim=0)
+                torch.cat([self.origin_f_map[self.bank.indices[idx]] for idx in rgb_lib_indices], dim=0)
             )]
             rgb_indices = [self.compute_indices(points_idx, patch) for patch in range(len(points_all))]
 
             rgb_map, rgb_score = self.rgb.compute_anomaly_map(
                 rgb_features,
                 rgb_reference_features,
-                torch.tensor(rgb_indices, device=self.rgb.device),
-            )############### END RGB PATCH ###########
+                torch.unique(torch.cat(rgb_indices, dim=0)),
+            )
 
             image_score = sdf_score * rgb_score
             new_rgb_map = rgb_map * self.weight + self.bias
