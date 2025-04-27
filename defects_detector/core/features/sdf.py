@@ -1,3 +1,5 @@
+from typing import Any
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -237,3 +239,6 @@ class SDFFeatureExtractor(BaseFeatureExtractor):
 
         s_map = s_map.reshape(1, 1, self.image_size, self.image_size)
         return torch.tensor(s_map)
+
+    def compute_anomaly_map(self, *args: Any):
+        ...

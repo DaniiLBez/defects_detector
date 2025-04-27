@@ -1,0 +1,6 @@
+output_dir: "output"
+
+# Пути к данным
+image_path: "/mnt/d/Downloads/MVTec3D-AD/cookie/test/contamination/"
+scores: "output/results/score_maps.npz"
+camera_params: "/mnt/d/Downloads/MVTec3D-AD/calibration/camera_parameters.json"

@@ -14,4 +14,4 @@ dataset_path: "/mnt/d/Downloads/MVTec3D-AD"
 
 # Параметры визуализации
 visualize: true  # Включить визуализацию
-threshold: 0.5  # Порог для определения дефекта
+threshold: 0.1  # Порог для определения дефекта

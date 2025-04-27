@@ -28,10 +28,10 @@ def parse_args():
     parser.add_argument("--visualize", action="store_true", help="Включить визуализацию результатов")
 
     group = parser.add_mutually_exclusive_group(required=True)
-    group.add_argument("--fit", action="store_true", help="Обучить модель")
+    group.add_argument("--fit", action="store_true", help="Сформировать банк памяти")
     group.add_argument("--memory_bank", type=str, help="Путь к предварительно сохраненному банку памяти")
 
-    parser.add_argument("--save_memory_bank", action="store_true", help="Сохранить банк памяти после обучения")
+    parser.add_argument("--save_memory_bank", action="store_true", help="Сохранить банк памяти после формирования")
 
     return parser.parse_args()
 
@@ -86,11 +86,16 @@ def main():
 
     detector.predict()
 
+    score_map = np.asarray(detector.feature_extractor.pixel_preds).reshape(-1, detector.image_size, detector.image_size)
+
     if config.get("visualize", False):
-        score_map = np.asarray(detector.feature_extractor.pixel_preds).reshape(-1, detector.image_size, detector.image_size)
         mask = np.asarray(score_map)
         export_test_image(detector.feature_extractor.image_list, mask, os.path.join(config["output_dir"], "visualization"))
 
+    if not os.path.exists(os.path.join(config["output_dir"], "result")):
+        os.makedirs(os.path.join(config["output_dir"], "result"))
+
+    np.savez(os.path.join(config["output_dir"], "result", "score_maps.npz"), maps=score_map)
 
 if __name__ == "__main__":
     main()
