@@ -7,8 +7,8 @@ sdf_checkpoint_path: "checkpoint/best_ckpt/ckpt_000601.pth"
 output_dir: "output"
 
 # Пути к данным
-image_path: "/mnt/d/Downloads/MVTec3D-AD/cookie/test/contamination/"
-grid_path: "/mnt/d/Downloads/MVTec3D-AD/cookie/test/contamination/"
+image_path: "/mnt/d/Downloads/MVTec3D-AD/cookie/test/combined/"
+grid_path: "/mnt/d/Downloads/MVTec3D-AD/cookie/test/combined/"
 
 dataset_path: "/mnt/d/Downloads/MVTec3D-AD"
 

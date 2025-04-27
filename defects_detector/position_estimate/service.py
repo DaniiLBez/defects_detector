@@ -1,57 +1,167 @@
-from abc import ABC
-
 import numpy as np
 import cv2
+from numpy import floating
 from skimage import morphology, measure
 from sklearn.cluster import DBSCAN
 from typing import List, Dict, Any, Tuple, Optional
-
-from defects_detector.position_estimate.data import DataLoader
-
-def area_scan_division_(camera_params: Dict[str, float]) -> Dict[str, float]:
-    """
-    Стратегия для преобразования параметров камеры в формат, используемый в CameraPositioningService.
-    Args:
-        camera_params: исходные параметры камеры
-    Returns:
-        camera_params: параметры камеры в формате, используемом в CameraPositioningService
-    """
-    if any([
-        camera_params.get("focus", None),
-        camera_params.get("sx", None),
-        camera_params.get("sy", None),
-        camera_params.get("cx", None),
-        camera_params.get("cy", None),
-    ]) is None:
-        raise ValueError("Camera parameters must contain focus, sx, sy, cx, and cy values.")
-
-    if not camera_params.get('fx', None):
-        camera_params.setdefault("fx", camera_params.get("focus", 1.0) * camera_params.get("sx", 1.0))
-    if not camera_params.get('fy', None):
-        camera_params.setdefault("fy", camera_params.get("focus", 1.0) * camera_params.get("sy", 1.0))
-    return camera_params
-
-
-CAMERA_STRATEGIES = {
-    "area_scan_division": area_scan_division_,
-}
 
 class CameraPositioningService:
     """
     Сервис для определения оптимальных позиций камеры для съемки дефектов.
     """
 
-    def __init__(self, camera_params: Dict[str, float], data: DataLoader, cluster_eps: float = 0.05, min_samples: int = 5):
+    def __init__(self,
+                 default_distance: float = 0.5,
+                 cluster_eps: float = 0.005,
+                 min_samples: int = 5,
+                 threshold: Optional[float] = None):
         """
         Инициализация сервиса.
 
         Args:
-            camera_params: внутренние параметры камеры
-            data: Карты глубины и карты дефектов
+            default_distance: расстояние от камеры до объекта по умолчанию (м)
+            cluster_eps: максимальное расстояние между точками в кластере
+            min_samples: минимальное количество точек для формирования кластера
+            threshold: пороговое значение для выделения дефектов
         """
-        self.camera_params = CAMERA_STRATEGIES[camera_params.get("camera_type", "area_scan_division")](camera_params)
-        self.data = data
 
+        self.default_distance = default_distance
+        self.cluster_eps = cluster_eps
+        self.min_samples = min_samples
+        self.threshold = threshold
+
+    def get_defects_from_regions(self, regions):
+        """
+        Преобразует регионы в формат дефектов с центрами
+
+        Args:
+            regions: список регионов из measure.regionprops
+
+        Returns:
+            список дефектов с центрами
+        """
+        defects = []
+        for region in regions:
+            y, x = region.centroid
+            defects.append({
+                'center': (x, y),
+                'area': region.area,
+                'bbox': region.bbox
+            })
+        return defects
+
+    def calculate_optimal_distance(self, defects: List[Dict[str, Any]], depth_map: np.ndarray) -> float | floating[Any]:
+        """
+        Вычисляет оптимальное расстояние до объекта на основе карты глубины
+
+        Args:
+            defects: список дефектов
+            depth_map: карта глубины
+
+        Returns:
+            оптимальное расстояние до объекта
+        """
+        depths = []
+        for defect in defects:
+            x, y = defect['center']
+            x, y = int(x), int(y)
+
+            x1 = max(0, x - 5)
+            y1 = max(0, y - 5)
+            x2 = min(depth_map.shape[1] - 1, x + 5)
+            y2 = min(depth_map.shape[0] - 1, y + 5)
+
+            area_depth = np.mean(depth_map[y1:y2, x1:x2])
+            depths.append(area_depth)
+
+        if not depths:
+            return self.default_distance
+
+        median_depth = np.median(depths)
+
+        return median_depth
+
+    def optimal_camera_positions(self, defects: List[Dict[str, Any]],
+                                 num_clusters: int,
+                                 depth_map: np.ndarray) -> List[Dict[str, Any]]:
+        """
+        Определяет оптимальные положения камеры для съемки кластеров дефектов.
+
+        Args:
+            defects: список дефектов с метками кластеров и нормалями
+            num_clusters: количество кластеров
+            depth_map: карта глубины для вычисления оптимального расстояния
+
+        Returns:
+            список оптимальных положений камеры для каждого кластера
+        """
+        camera_positions = []
+
+        for cluster_id in range(num_clusters):
+            cluster_defects = [d for d in defects if d['cluster'] == cluster_id]
+
+            if not cluster_defects:
+                continue
+
+            positions = np.array([d['position_3d'] for d in cluster_defects])
+            center = np.mean(positions, axis=0)
+
+            # Средняя нормаль кластера
+            normals = np.array([d['normal'] for d in cluster_defects])
+            avg_normal = np.mean(normals, axis=0)
+            norm = np.linalg.norm(avg_normal)
+            if norm > 0:
+                avg_normal = avg_normal / norm
+
+            optimal_distance = self.calculate_optimal_distance(cluster_defects, depth_map[:, :, 2])
+
+            # Вычисление оптимальной позиции камеры
+            camera_pos = center + avg_normal * optimal_distance
+
+            def get_position(value) -> Dict[str, float]:
+                return {
+                    'x': value[0],
+                    'y': value[1],
+                    'z': value[2]
+                }
+
+            camera_positions.append({
+                'camera_position': get_position(camera_pos),
+                'defect_cluster_center': get_position(center),
+                'cluster_id': cluster_id,
+                'defects_count': len(cluster_defects),
+                'distance': optimal_distance
+            })
+
+        return camera_positions
+
+    def get_optimal_camera_positions(self, defects: List[Dict[str, Any]],
+                                     depth_map: np.ndarray) -> List[Dict[str, Any]]:
+        """
+        Основной метод для определения оптимальных позиций камеры.
+
+        Args:
+            defects: список дефектов с координатами center
+            depth_map: карта глубины
+
+        Returns:
+            список оптимальных позиций камеры
+        """
+        # 1. Преобразование в 3D
+        defects_3d = self.map_2d_to_3d(defects, depth_map)
+
+        # 2. Кластеризация
+        clustered_defects, num_clusters = self.cluster_defects(defects_3d)
+
+        # 3. Вычисление нормалей
+        defects_with_normals = self.compute_surface_normals(clustered_defects, depth_map)
+
+        # 4. Определение оптимальных позиций с учетом карты глубины
+        camera_positions = self.optimal_camera_positions(
+            defects_with_normals, num_clusters, depth_map
+        )
+
+        return camera_positions
 
     @staticmethod
     def extract_defects(score_map, threshold=None, min_area=5):
@@ -67,13 +177,9 @@ class CameraPositioningService:
             binary_map: бинаризованная карта дефектов
             regions: список обнаруженных областей с их характеристиками
         """
-        # Нормализация карты аномалий
-        norm_score_map = cv2.normalize(score_map, None, 0, 255, cv2.NORM_MINMAX).astype(np.uint8)
-
         # Автоматическое определение порога, если не задан
         if threshold is None:
-            threshold, _ = cv2.threshold(norm_score_map, 0, 255, cv2.THRESH_OTSU)
-            threshold = threshold / 255.0
+            threshold = np.reshape(score_map, -1).mean() + 3 * np.reshape(score_map, -1).std()
 
         # Бинаризация карты аномалий
         binary_map = (score_map > threshold).astype(np.uint8)
@@ -102,22 +208,12 @@ class CameraPositioningService:
         Returns:
             список дефектов с добавленными 3D координатами
         """
-        fx, fy = self.camera_params['fx'], self.camera_params['fy']
-        cx, cy = self.camera_params['cx'], self.camera_params['cy']
 
         for defect in defects:
             x, y = defect['center']
             x, y = int(x), int(y)
 
-            # Получение глубины в точке дефекта
-            z = depth_map[y, x]
-
-            # Преобразование в 3D координаты
-            x_3d = (x - cx) * z / fx
-            y_3d = (y - cy) * z / fy
-            z_3d = z
-
-            defect['position_3d'] = (x_3d, y_3d, z_3d)
+            defect['position_3d'] = depth_map[y, x]
 
         return defects
 
@@ -138,7 +234,7 @@ class CameraPositioningService:
         positions = np.array([defect['position_3d'] for defect in defects])
 
         # Кластеризация
-        clustering = DBSCAN(eps=self.cluster_eps, min_samples=self.min_samples).fit(positions)
+        clustering = DBSCAN(eps=self.cluster_eps, min_samples=1).fit(positions)
         labels = clustering.labels_
 
         # Добавление меток кластеров к дефектам
@@ -160,19 +256,19 @@ class CameraPositioningService:
             дефекты с добавленными нормалями
         """
         # Вычисление градиентов карты глубины
-        sobelx = cv2.Sobel(depth_map, cv2.CV_64F, 1, 0, ksize=3)
-        sobely = cv2.Sobel(depth_map, cv2.CV_64F, 0, 1, ksize=3)
+        depth_map_2d = depth_map[:, :, 2]
+        sobelx = cv2.Sobel(depth_map_2d, cv2.CV_64F, 1, 0, ksize=3)
+        sobely = cv2.Sobel(depth_map_2d, cv2.CV_64F, 0, 1, ksize=3)
 
         for defect in defects:
             x, y = defect['center']
             x, y = int(x), int(y)
 
-            # Получение градиентов в точке дефекта
             dx = sobelx[y, x]
             dy = sobely[y, x]
 
-            # Нормаль поверхности (-dx, -dy, 1), нормализованная
-            normal = np.array([-dx, -dy, 1.0])
+            # Нормаль поверхности (-dx, -dy, -1), нормализованная
+            normal = np.array([-dx, -dy, -1.0])
             norm = np.linalg.norm(normal)
             if norm > 0:
                 normal = normal / norm
@@ -180,79 +276,3 @@ class CameraPositioningService:
             defect['normal'] = normal
 
         return defects
-
-    def optimal_camera_positions(self, defects: List[Dict[str, Any]],
-                              num_clusters: int,
-                              current_camera_position: Optional[np.ndarray] = None) -> List[Dict[str, Any]]:
-        """
-        Определяет оптимальные положения камеры для съемки кластеров дефектов.
-
-        Args:
-            defects: список дефектов с метками кластеров и нормалями
-            num_clusters: количество кластеров
-            current_camera_position: текущее положение камеры
-
-        Returns:
-            список оптимальных положений камеры для каждого кластера
-        """
-        camera_positions = []
-
-        for cluster_id in range(num_clusters):
-            cluster_defects = [d for d in defects if d['cluster'] == cluster_id]
-
-            if not cluster_defects:
-                continue
-
-            # Центр кластера
-            positions = np.array([d['position_3d'] for d in cluster_defects])
-            center = np.mean(positions, axis=0)
-
-            # Средняя нормаль кластера
-            normals = np.array([d['normal'] for d in cluster_defects])
-            avg_normal = np.mean(normals, axis=0)
-            norm = np.linalg.norm(avg_normal)
-            if norm > 0:
-                avg_normal = avg_normal / norm
-
-            # Вычисление оптимальной позиции камеры
-            # Камера располагается в направлении нормали от центра кластера
-            camera_pos = center + avg_normal * self.default_distance
-
-            camera_positions.append({
-                'position': camera_pos,
-                'look_at': center,
-                'cluster_id': cluster_id,
-                'defects_count': len(cluster_defects)
-            })
-
-        return camera_positions
-
-    def get_optimal_camera_positions(self, defects: List[Dict[str, Any]],
-                                  depth_map: np.ndarray,
-                                  current_position: Optional[np.ndarray] = None) -> List[Dict[str, Any]]:
-        """
-        Основной метод для определения оптимальных позиций камеры.
-
-        Args:
-            defects: список дефектов с координатами center
-            depth_map: карта глубины
-            current_position: текущее положение камеры (опционально)
-
-        Returns:
-            список оптимальных позиций камеры
-        """
-        # 1. Преобразование в 3D
-        defects_3d = self.map_2d_to_3d(defects, depth_map)
-
-        # 2. Кластеризация
-        clustered_defects, num_clusters = self.cluster_defects(defects_3d)
-
-        # 3. Вычисление нормалей
-        defects_with_normals = self.compute_surface_normals(clustered_defects, depth_map)
-
-        # 4. Определение оптимальных позиций
-        camera_positions = self.optimal_camera_positions(
-            defects_with_normals, num_clusters, current_position
-        )
-
-        return camera_positions

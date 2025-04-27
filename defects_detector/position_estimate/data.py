@@ -13,7 +13,9 @@ class DataLoader:
         self.scores_path = scores
 
     def load_data(self):
-        scores = np.asarray(np.load(self.scores_path)["score_map"])
+        raw_scores = np.load(self.scores_path)
+        scores = np.asarray(raw_scores["maps"])
+
         depth_paths = glob.glob(os.path.join(self.dataset_path, "xyz", "*.tiff"))
 
         assert len(depth_paths) == scores.shape[0], "Number of depth maps and score maps do not match"
@@ -29,3 +31,14 @@ class DataLoader:
 
     def __getitem__(self, idx):
         return self.samples[idx]
+
+    def __iter__(self):
+        self.current_idx = 0
+        return self
+
+    def __next__(self):
+        if self.current_idx >= len(self):
+            raise StopIteration
+        result = self[self.current_idx]
+        self.current_idx += 1
+        return result
