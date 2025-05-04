@@ -4,12 +4,14 @@ import plotly.graph_objects as go
 import plotly.express as px
 import plotly.io as pio
 from typing import Dict, List
+from skimage import measure, morphology
 
 
 def interactive_camera_validation(dataset_path, scores_path, results_path, sample_idx=0,
-                                  html_output=None, stride=5):
+                                  html_output=None, stride=3, threshold=None):
     """
     Интерактивная визуализация для проверки позиций камеры с использованием Plotly
+    с подсветкой дефектных областей
 
     Args:
         dataset_path: путь к директории с картами глубины
@@ -18,6 +20,7 @@ def interactive_camera_validation(dataset_path, scores_path, results_path, sampl
         sample_idx: индекс образца для визуализации
         html_output: путь для сохранения HTML-файла с визуализацией
         stride: шаг прореживания точек для облегчения отображения
+        threshold: пороговое значение для выделения дефектов (если None, вычисляется автоматически)
     """
     # Загружаем результаты
     with open(results_path, 'r') as f:
@@ -31,29 +34,62 @@ def interactive_camera_validation(dataset_path, scores_path, results_path, sampl
     # Получаем карты для указанного образца
     depth_map, score_map = loader[sample_idx]
 
+    # Автоматическое определение порога, если не задан
+    if threshold is None:
+        threshold = np.reshape(score_map, -1).mean() + 3 * np.reshape(score_map, -1).std()
+
+    # Бинаризация карты аномалий
+    binary_map = (score_map > threshold).astype(np.uint8)
+
+    # Морфологическая обработка для удаления шума
+    kernel = morphology.disk(2)
+    binary_map = morphology.opening(binary_map, kernel)
+
     # Создаем фигуру Plotly
     fig = go.Figure()
 
-    # Прореживаем точки для наглядности и добавляем их в визуализацию
-    points = []
+    # Контейнеры для нормальных и дефектных точек
+    normal_points = []
+    defect_points = []
+
+    # Прореживаем точки для наглядности и разделяем на нормальные и дефектные
     for y in range(0, depth_map.shape[0], stride):
         for x in range(0, depth_map.shape[1], stride):
             point = depth_map[y, x]
-            points.append(point)
+            # Проверяем, является ли точка дефектом
+            if binary_map[y, x] > 0:
+                defect_points.append(point)
+            else:
+                normal_points.append(point)
 
-    points = np.array(points)
+    normal_points = np.array(normal_points)
+    defect_points = np.array(defect_points)
 
-    # Добавляем облако точек на график
-    fig.add_trace(go.Scatter3d(
-        x=points[:, 0], y=points[:, 1], z=points[:, 2],
-        mode='markers',
-        marker=dict(
-            size=1,
-            color='orange',
-            opacity=0.9
-        ),
-        name='Облако точек'
-    ))
+    # Добавляем нормальные точки на график
+    if len(normal_points) > 0:
+        fig.add_trace(go.Scatter3d(
+            x=normal_points[:, 0], y=normal_points[:, 1], z=normal_points[:, 2],
+            mode='markers',
+            marker=dict(
+                size=1,
+                color='orange',  # Светло-серый для нормальных точек
+                opacity=0.7
+            ),
+            name='Нормальные точки'
+        ))
+
+    # Добавляем дефектные точки на график
+    if len(defect_points) > 0:
+        fig.add_trace(go.Scatter3d(
+            x=defect_points[:, 0], y=defect_points[:, 1], z=defect_points[:, 2],
+            mode='markers',
+            marker=dict(
+                size=2,  # Чуть больше размер для выделения
+                color='red',  # Красный цвет для дефектов
+                opacity=1.0
+            ),
+            name='Дефектные точки'
+        ))
 
     # Обрабатываем позиции камеры
     sample_results = results[sample_idx] if isinstance(results[0], list) else results
@@ -139,7 +175,7 @@ def interactive_camera_validation(dataset_path, scores_path, results_path, sampl
             color='blue',
             symbol='circle'
         ),
-        name='Дефекты',
+        name='Центры кластеров',
         text=info_text,
         hoverinfo='text'
     ))
