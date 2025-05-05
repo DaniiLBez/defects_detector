@@ -250,10 +250,10 @@ def interactive_camera_validation(dataset_path, scores_path, results_path, sampl
                 direction="right",
                 pad={"r": 10, "t": 10},
                 showactive=True,
-                x=0.1,
-                y=1.1,
-                xanchor="left",
-                yanchor="top"
+                x=0.5,
+                y=-0.2,
+                xanchor='center',
+                yanchor='bottom',
             )
         ]
     )
@@ -288,7 +288,7 @@ def interactive_camera_validation(dataset_path, scores_path, results_path, sampl
             )
         )
 
-    fig.update_layout(scene_annotations=annotations)
+    # scene_annotations удалены
 
     # Сохраняем в HTML-файл, если указан путь
     if html_output:
@@ -304,8 +304,7 @@ fig = interactive_camera_validation(
     results_path='./defects_detector/results.json',
     sample_idx=24,
     html_output='camera_validation.html',  # Сохраняем результат в HTML
-    stride=5  # Увеличиваем шаг для более быстрой визуализации
+    stride=3  # Увеличиваем шаг для более быстрой визуализации
 )
 
-# Показываем график (если в Jupyter или другой интерактивной среде)
 fig.show()
