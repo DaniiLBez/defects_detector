@@ -203,7 +203,7 @@ def export_test_image(test_img, scores, path):
         img = denormalization(img, IMAGENET_MEAN, IMAGENET_STD)
 
         # scores
-        threshold = scores[i].mean() + 2 * scores[i].std()
+        threshold = scores[i].mean() + 3 * scores[i].std()
         score_mask = np.zeros_like(scores[i])
         score_mask[scores[i] > threshold] = 1.0
         score_mask = morphology.opening(score_mask, kernel)
