@@ -1,0 +1,57 @@
+@startuml
+
+<style>
+    classDiagram {
+        FontSize 28
+    }
+</style>
+
+package "preprocessing" {
+    package "preprocessing.patches" {
+        abstract class BaseDataLoader {
+         + load_data(path) Dict[str, Any]
+         + get_point_cloud(data, **kwargs) Dict[str, Any]
+         + normalize(points) np.ndarray
+         + get_dataset_files(input_dir, split) List[Dict[str, Any]]
+         + get_save_path(file_info, base_save_path) str
+        }
+
+        abstract class BasePatchCutter {
+         + cut_patches(data, **kwargs) List[Dict[str, Any]]
+         + sample_and_group(points, num_point, num_sample, indices) Tuple[Tensor, np.ndarray]
+         + sample_query_points(target_points, query_num) Tuple[np.ndarray, np.ndarray]
+        }
+
+        class DepthMapsLoader {}
+
+        class DepthMapsPatchCutter {}
+
+        class PatchCutterService {
+         + data_loader: BaseDataLoader
+         + patch_cutter: BasePatchCutter
+         + save_path: str
+
+         + process_file(input_file) Dict[str, Any]
+         + process_directory(input_dir, split) List[str]
+         + save_patches(patches, save_path, split)
+        }
+    }
+
+    package "preprocessing.plane_remover" {
+        abstract class BasePlaneRemover {
+            + process(data) Dict[str, Any]
+        }
+
+        class DepthMapsPlaneRemover {}
+    }
+}
+
+BasePlaneRemover <|.. DepthMapsPlaneRemover
+BaseDataLoader <|.. DepthMapsLoader
+BasePatchCutter <|.. DepthMapsPatchCutter
+
+PatchCutterService <-- BasePlaneRemover
+PatchCutterService o-- BaseDataLoader
+PatchCutterService o-- BasePatchCutter
+
+@enduml

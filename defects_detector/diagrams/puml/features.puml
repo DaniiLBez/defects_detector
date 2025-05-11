@@ -1,0 +1,133 @@
+@startuml
+
+<style>
+    classDiagram {
+        FontSize 28
+    }
+</style>
+
+package "features" {
+class RGBModel {
+    -_device: Device
+    -backbone: timm.models
+    -avg_pool: torch.nn.AdaptiveAvgPool2d
+    +device: Device
+
+    +__init__(device, backbone_name, out_indices, checkpoint_path, pool_last)
+    +forward(x): list
+    +freeze_parameters(layers, freeze_bn): void
+}
+
+class RGBFeatureExtractor {
+    -model: RGBModel
+    -feature_dim: int
+    -image_size: int
+
+    + __init__(feature_dim, image_size)
+    + extract_features(image) torch.Tensor
+    + compute_anomaly_map(features, reference_features) torch.Tensor
+}
+
+RGBFeatureExtractor *-- RGBModel
+
+class PointEncoder {
+    +conv1: nn.Conv1d
+    +conv2: nn.Conv1d
+    +conv3: nn.Conv1d
+    +fc1: nn.Linear
+    +fc2: nn.Linear
+    +bn1: nn.BatchNorm1d
+    +bn2: nn.BatchNorm1d
+    +bn3: nn.BatchNorm1d
+    +bn4: nn.BatchNorm1d
+    +bn5: nn.BatchNorm1d
+
+    +__init__(in_channels, feature_dim)
+    +forward(x): torch.Tensor
+}
+
+class NeuralImplicitField {
+    +fc1: nn.Linear
+    +fc2: nn.Linear
+    +fc3: nn.Linear
+    +fc_out: nn.Linear
+
+    +__init__(feature_dim)
+    +forward(features, points): torch.Tensor
+    +get_gradient(features, points): torch.Tensor
+}
+
+class SDFModel {
+    +encoder: PointEncoder
+    +decoder: NeuralImplicitField
+    +point_num: int
+
+    +__init__(point_num, feature_dim)
+    +forward(points, query_points): torch.Tensor
+    +get_feature(points): torch.Tensor
+    +get_sdf(features, query_points): torch.Tensor
+    +freeze_model(): void
+}
+
+SDFModel *-- PointEncoder
+SDFModel *-- NeuralImplicitField
+
+class SDFFeatureExtractor {
+ - model: SDFModel
+ - feature_dim: int
+ - point_num: int
+
+ + __init__(feature_dim, point_num)
+ + extract_features(points, points_idx) torch.Tensor
+ + compute_anomaly_map(features, reference_features) torch.Tensor
+}
+
+SDFFeatureExtractor *-- SDFModel
+
+class FeatureExtractor {
+    + rgb: RGBFeatureExtractor
+    + sdf: SDFFeatureExtractor
+    + bank: MemoryBank
+
+    + __init__(rgb, sdf, bank)
+    + add_features_to_memory(sample, data_id)
+    + compute_indices(points_idx, patch_idx) torch.Tensor
+    + foreground_subsampling()
+    + compute_distribution_params(pixel_preds)
+    + find_knn_feature(feature, mode)
+    + cal_alignment()
+    + predict_align_data(sample)
+    + predict(sample)
+}
+
+abstract class BaseFeatureExtractor {
+    + extract_features(data) torch.Tensor
+    + compute_anomaly_map(features, reference_features, method) Tuple[torch.Tensor, float]:
+}
+
+class MemoryBank {
+    + rgb_features: List[torch.Tensor]
+    + sdf_features: List[torch.Tensor]
+    + indices: List[torch.Tensor]
+    + rgb_features_tensor: Optional[torch.Tensor]
+    + sdf_features_tensor: Optional[torch.Tensor]
+    + indices_tensor: Optional[torch.Tensor]
+    + is_finalized: bool
+
+    + __init__()
+    + add_features(features, indices) void
+    + find_nearest_features(query_features, k) Tuple[torch.Tensor, torch.Tensor]
+    + finalize()
+    + save(directory)
+    + load(path, name) MemoryBank
+}
+}
+
+FeatureExtractor o-- MemoryBank
+
+BaseFeatureExtractor <|.. RGBFeatureExtractor
+BaseFeatureExtractor <|.. SDFFeatureExtractor
+
+FeatureExtractor o-- BaseFeatureExtractor
+
+@enduml

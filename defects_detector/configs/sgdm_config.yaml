@@ -1,0 +1,17 @@
+# Основные параметры
+image_size: 224
+feature_size: 28
+point_num: 500
+rgb_backbone: "wide_resnet50_2"
+sdf_checkpoint_path: "checkpoint/best_ckpt/ckpt_000601.pth"
+output_dir: "output"
+
+# Пути к данным
+image_path: "/mnt/d/Downloads/MVTec3D-AD/cookie/test/combined/"
+grid_path: "/mnt/d/Downloads/MVTec3D-AD/cookie/test/combined/"
+
+dataset_path: "/mnt/d/Downloads/MVTec3D-AD"
+
+# Параметры визуализации
+visualize: true  # Включить визуализацию
+threshold: 0.1  # Порог для определения дефекта
