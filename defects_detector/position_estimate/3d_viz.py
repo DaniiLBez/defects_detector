@@ -300,8 +300,8 @@ def interactive_camera_validation(dataset_path, scores_path, results_path, sampl
 # Пример использования
 fig = interactive_camera_validation(
     dataset_path='/mnt/d/Downloads/MVTec3D-AD/cookie/test/combined/',
-    scores_path='./defects_detector/output/result/score_maps.npz',
-    results_path='./defects_detector/results.json',
+    scores_path='../output/result/score_maps.npz',
+    results_path='../results.json',
     sample_idx=24,
     html_output='camera_validation.html',  # Сохраняем результат в HTML
     stride=3  # Увеличиваем шаг для более быстрой визуализации

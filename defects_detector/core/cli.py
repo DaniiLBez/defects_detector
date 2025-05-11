@@ -8,7 +8,7 @@ from torch.utils.data import DataLoader
 
 from defects_detector.core.data import MVTec3DTrain
 from defects_detector.core.shape_guided_detector import ShapeGuidedDetector
-from utils.visualize_util import export_test_image
+from defects_detector.utils.utils import export_test_image
 
 
 def parse_args():
